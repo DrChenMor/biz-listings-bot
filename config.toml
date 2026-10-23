@@ -15,6 +15,15 @@ user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36
 state = "wa"
 # Postcode ranges counted as Perth metro in the "Perth metro" column.
 perth_postcodes = [[6000, 6199]]
+# Businesses whose industry or category contains one of these words are skipped by every bot,
+# and removed from the sheet if they're already there: no food businesses. Plurals match too.
+# (The SEEK Save-to-sheet script has the same list in seek/SaveToSheet.gs.)
+exclude_categories = [
+  "food", "cafe", "coffee", "restaurant", "takeaway", "take-away", "bakery", "butcher", "deli",
+  "catering", "juice", "bubble tea", "ice cream", "gelato", "donut", "pizza", "pub", "bar", "tavern",
+  "brewery", "liquor", "alcohol", "hospitality", "function centre", "fruit shop", "supermarket",
+  "grocery", "convenience", "vending",
+]
 
 [sources.bsale]
 enabled = true

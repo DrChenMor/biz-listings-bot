@@ -1,4 +1,5 @@
 """Settings from config.toml."""
+import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,9 +32,16 @@ class Config:
     user_agent: str
     state: str
     perth_postcodes: list[tuple[int, int]]
+    # Matches industries/categories every bot skips (food businesses); None when the list is empty.
+    exclude: re.Pattern | None
     sources: list[str]
     health: HealthConfig
     abn: AbnConfig
+
+    def excluded(self, *texts: str) -> str:
+        """The excluded word found in these texts, or "" if none."""
+        match = self.exclude.search(" ".join(t for t in texts if t)) if self.exclude else None
+        return match.group(0) if match else ""
 
 
 def load(path: Path = ROOT / "config.toml") -> Config:
@@ -46,6 +54,7 @@ def load(path: Path = ROOT / "config.toml") -> Config:
         user_agent=bot["user_agent"],
         state=filters["state"].lower(),
         perth_postcodes=[tuple(r) for r in filters["perth_postcodes"]],
+        exclude=_word_pattern(filters.get("exclude_categories", [])),
         sources=[name for name, s in raw["sources"].items() if s.get("enabled", True)],
         health=HealthConfig(
             suburbs=[s.lower() for s in health["suburbs"]],
@@ -61,3 +70,10 @@ def load(path: Path = ROOT / "config.toml") -> Config:
             delay_seconds=tuple(abn["delay_seconds"]),
         ),
     )
+
+
+def _word_pattern(words: list[str]) -> re.Pattern | None:
+    """Whole words, plural or not: "cafe" matches "Cafe" and "Cafes" but "bar" doesn't match "Barber"."""
+    if not words:
+        return None
+    return re.compile(r"\b(?:" + "|".join(re.escape(w) for w in words) + r")(?:s|es)?\b", re.I)

@@ -105,6 +105,37 @@ def test_a_listing_index_that_is_a_web_page_is_skipped_not_a_crash():
     assert listings["fake:1"]["status"] == "Active"  # nothing marked removed
 
 
+def test_food_businesses_are_skipped_remembered_and_removed_from_the_sheet():
+    site, listings, changes, skipped = FakeSite(), {}, [], {}
+    site.add("1", "t1", category="Hair Salon", industry="Beauty and Health")
+    site.add("2", "t1", category="Cafe, Restaurant", industry="Food Hospitality")
+    cfg = config.load()
+    stats = sync_source(site, cfg, None, listings, changes, 100, skipped)
+    assert set(listings) == {"fake:1"}
+    assert set(skipped) == {"fake:2"} and skipped["fake:2"]["reason"] == "Excluded category (food): Cafe, Restaurant"
+    assert stats["skipped"] == 1
+
+    # Not opened again while the site hasn't updated it.
+    site.opened.clear()
+    sync_source(site, cfg, None, listings, changes, 100, skipped)
+    assert site.opened == []
+
+    # A food listing collected before the rule existed leaves the sheet on the next run.
+    listings["fake:3"] = {"key": "fake:3", "source": "fake", "category": "Bakery", "sitemap_lastmod": "t1", "status": "Active"}
+    site.add("3", "t1", category="Bakery")
+    sync_source(site, cfg, None, listings, changes, 100, skipped)
+    assert "fake:3" not in listings and "fake:3" in skipped
+    assert site.opened == []
+
+
+def test_exclusion_matches_whole_words_only():
+    cfg = config.load()
+    assert cfg.excluded("Pubs, Bars & Clubs")
+    assert cfg.excluded("Food & Drink > Coffee, Cafes & Restaurants")
+    assert not cfg.excluded("Barber", "Health, Beauty & Fitness > Hair, Beauty & Spa")
+    assert not cfg.excluded("Beauty and Health", "Hair Salon")
+
+
 def test_blocking_stops_the_source_and_keeps_what_was_collected():
     site, listings, changes = FakeSite(), {}, []
     for i in ("1", "2", "3"):

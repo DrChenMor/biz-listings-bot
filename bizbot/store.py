@@ -66,6 +66,11 @@ COLUMNS = [
 ]
 LISTINGS = Table("Listings", COLUMNS, frozenset({"price_aud", "turnover_aud", "profit_aud"}))
 HEADERS = LISTINGS.headers
+# Listings left out on purpose (e.g. food businesses), remembered so they aren't opened again.
+SKIPPED = Table(
+    "Skipped",
+    [("title", "Title"), ("reason", "Reason"), ("source", "Source"), ("url", "URL"), ("sitemap_lastmod", "Site updated"), ("skipped_at", "Skipped on"), ("key", "Key")],
+)
 
 CHANGE_COLUMNS = [
     ("when", "When"),
@@ -204,12 +209,21 @@ class SheetStore:
 
     def save(self, table: Table, records: dict[str, dict]) -> None:
         row_keys = self._row_keys.get(table.tab, [])
+        # Rows whose record was dropped (e.g. a food business) are deleted whole, with your columns.
+        gone = [i for i, k in enumerate(row_keys) if k and k not in records]
+        row_keys = [k for k in row_keys if not k or k in records]
         known = set(row_keys)
         new_keys = sorted((k for k in records if k not in known), key=lambda k: (records[k].get("first_seen", ""), k), reverse=True)
         order = new_keys + row_keys
         body = [table.headers] + [_row(records[k], table.columns) if k in records else [""] * len(table.columns) for k in order]
         ws = self._worksheet(table.tab, table.headers)
         with self._explained():
+            if gone:
+                # One request, bottom row first so the row numbers above stay valid.
+                ws.spreadsheet.batch_update({"requests": [
+                    {"deleteDimension": {"range": {"sheetId": ws.id, "dimension": "ROWS", "startIndex": i + 1, "endIndex": i + 2}}}
+                    for i in sorted(gone, reverse=True)
+                ]})
             if new_keys:
                 # Insert whole rows at the top so your own columns shift down with the bot's.
                 ws.insert_rows([[""]] * len(new_keys), row=2)
@@ -217,7 +231,7 @@ class SheetStore:
                 ws.add_cols(len(table.columns) - ws.col_count)
             ws.update(values=body, range_name="A1", value_input_option="RAW")
         self._row_keys[table.tab] = order
-        log.info("Saved %d rows (%d new) to the %s tab", len(records), len(new_keys), table.tab)
+        log.info("Saved %d rows (%d new, %d removed) to the %s tab", len(records), len(new_keys), len(gone), table.tab)
 
     def log(self, changes: list[dict], runs: list[dict]) -> None:
         with self._explained():

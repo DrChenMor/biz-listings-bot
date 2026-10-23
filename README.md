@@ -14,8 +14,14 @@ No AI and no paid services. It runs free on GitHub Actions, and Google Sheets is
 | Site | Status | How |
 |---|---|---|
 | [bsale.com.au](https://bsale.com.au) | ✅ Working | Public sitemap + listing pages. About 1,900 WA listings. |
-| SEEK Business | ⛔ Not included | Cloudflare stops automated browsers on the first page. |
+| SEEK Business | ✅ As you browse | Blocks bots, so you browse it and a **Save to sheet** bookmark saves the page. See [seek/README.md](seek/README.md). |
 | BusinessesForSale.com | ⛔ Not included | Cloudflare blocks automated requests outright. |
+| commercialrealestate.com.au | ⏳ Waiting | Domain's official API, once Domain approves access. |
+
+**No food businesses.** Every bot skips businesses whose industry or category matches the words in
+`exclude_categories` in `config.toml` (cafés, restaurants, takeaways, bakeries, pubs, liquor stores and more).
+The bsale bot lists what it left out in the **Skipped** tab, and food listings it collected earlier are removed
+from the Listings tab.
 
 The bot never tries to get past a site's bot protection. If a site starts refusing it (HTTP 403 or 429),
 it stops that site for the run and writes "blocked" in the Runs tab.

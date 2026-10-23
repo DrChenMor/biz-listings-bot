@@ -8,12 +8,25 @@ from bizbot.store import HEADERS, LISTINGS, SheetError, SheetStore, sheet_id_fro
 SHEET_ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcd"
 
 
+class FakeSpreadsheet:
+    def __init__(self, ws):
+        self.ws = ws
+
+    def batch_update(self, body):
+        for request in body["requests"]:
+            r = request["deleteDimension"]["range"]
+            assert r["dimension"] == "ROWS"
+            del self.ws.grid[r["startIndex"]: r["endIndex"]]
+
+
 class FakeWorksheet:
     """In-memory grid with the few gspread methods SheetStore uses."""
 
     def __init__(self, grid=None):
         self.grid = grid or []
         self.col_count = len(HEADERS)
+        self.id = 0
+        self.spreadsheet = FakeSpreadsheet(self)
 
     def get_all_values(self, value_render_option=None):
         rows = [list(r) for r in self.grid]
@@ -78,6 +91,24 @@ def test_new_rows_go_on_top_and_your_own_columns_stay_with_their_listing():
     assert rows["Business 1"][len(HEADERS)] == "yes"
     assert rows["Business 1"][HEADERS.index("Price (AUD)")] == 90_000
     assert len(store._worksheets["Changes"].grid) == 1 and len(store._worksheets["Runs"].grid) == 1
+
+
+def test_dropped_records_are_deleted_with_your_columns_and_the_rest_stay_aligned():
+    store = make_store()
+    store.load(LISTINGS)
+    store.save(LISTINGS, {f"bsale:{i}": listing(i) for i in (1, 2, 3, 4)})
+    grid = store._worksheets["Listings"].grid
+    title = HEADERS.index("Title")
+    grid[0].append("Contacted?")
+    for row in grid[1:]:
+        row.append("note for " + row[title])
+
+    records = store.load(LISTINGS)
+    del records["bsale:3"], records["bsale:1"]  # e.g. food businesses
+    store.save(LISTINGS, records)
+
+    rows = store._worksheets["Listings"].grid[1:]
+    assert [(r[title], r[len(HEADERS)]) for r in rows] == [("Business 4", "note for Business 4"), ("Business 2", "note for Business 2")]
 
 
 @pytest.mark.parametrize(

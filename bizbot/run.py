@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 from .config import Config
 from .http import Blocked, PoliteClient
 from .sources import SOURCES
-from .store import LISTINGS
+from .store import LISTINGS, SKIPPED
 
 log = logging.getLogger(__name__)
 PERTH = ZoneInfo("Australia/Perth")
@@ -27,15 +27,17 @@ def run(cfg: Config, store, limit: int | None = None, jitter: bool = False) -> l
     if jitter:
         wait_randomly(cfg)
     listings = store.load(LISTINGS)
+    skipped = store.load(SKIPPED)
     client = PoliteClient(cfg.user_agent, cfg.delay_seconds)
     changes: list[dict] = []
     runs: list[dict] = []
     try:
         for name in cfg.sources:
             max_pages = cfg.max_listings_per_run if limit is None else limit
-            runs.append(sync_source(SOURCES[name], cfg, client, listings, changes, max_pages))
+            runs.append(sync_source(SOURCES[name], cfg, client, listings, changes, max_pages, skipped))
     finally:
         store.save(LISTINGS, listings)
+        store.save(SKIPPED, skipped)
         store.log(changes, runs)
     return runs
 
@@ -46,9 +48,10 @@ def wait_randomly(cfg: Config) -> None:
     time.sleep(wait)
 
 
-def sync_source(source, cfg: Config, client: PoliteClient, listings: dict, changes: list, limit: int) -> dict:
+def sync_source(source, cfg: Config, client: PoliteClient, listings: dict, changes: list, limit: int, skipped: dict | None = None) -> dict:
     stamp = now()
-    stats = dict(started=stamp, source=source.NAME, on_site=0, new=0, updated=0, removed=0, fetched=0, backlog=0, errors=0, result="ok")
+    skipped = {} if skipped is None else skipped
+    stats = dict(started=stamp, source=source.NAME, on_site=0, new=0, updated=0, removed=0, fetched=0, backlog=0, errors=0, skipped=0, result="ok")
     try:
         entries = {f"{source.NAME}:{e.listing_id}": e for e in source.list_entries(client, cfg)}
     except Blocked as e:
@@ -66,6 +69,15 @@ def sync_source(source, cfg: Config, client: PoliteClient, listings: dict, chang
         stats["result"] = "listing index was empty; nothing marked as removed"
         return stats
 
+    # Listings already in the sheet that the exclusions now cover (food businesses) leave it.
+    for key in [k for k, row in listings.items() if row.get("source") == source.NAME and cfg.excluded(row.get("industry"), row.get("category"))]:
+        row = listings.pop(key)
+        skipped[key] = _skip(key, row, stamp, cfg.excluded(row.get("industry"), row.get("category")))
+        stats["skipped"] += 1
+    # Forget skipped listings that are no longer on the site.
+    for key in [k for k, row in skipped.items() if row.get("source") == source.NAME and k not in entries]:
+        del skipped[key]
+
     for key, row in listings.items():
         if row.get("source") != source.NAME:
             continue
@@ -77,7 +89,9 @@ def sync_source(source, cfg: Config, client: PoliteClient, listings: dict, chang
             row.update(status="Removed", last_changed=stamp, sitemap_lastmod="")
             stats["removed"] += 1
 
-    new = sorted((e for k, e in entries.items() if k not in listings), key=lambda e: int(e.listing_id), reverse=True)
+    # A skipped listing is opened again only if the site has updated it since.
+    was_skipped = {k for k, e in entries.items() if skipped.get(k, {}).get("sitemap_lastmod") == e.lastmod}
+    new = sorted((e for k, e in entries.items() if k not in listings and k not in was_skipped), key=lambda e: int(e.listing_id), reverse=True)
     updated = [e for k, e in entries.items() if k in listings and listings[k].get("sitemap_lastmod") != e.lastmod]
     queue = (new + updated)[:limit]
     stats["backlog"] = len(new) + len(updated) - len(queue)
@@ -104,10 +118,30 @@ def sync_source(source, cfg: Config, client: PoliteClient, listings: dict, chang
                 listings[key].update(status="Removed", last_changed=stamp, sitemap_lastmod=entry.lastmod)
                 stats["removed"] += 1
             continue
+        if word := cfg.excluded(data.get("industry"), data.get("category")):
+            skipped[key] = _skip(key, {**data, "url": entry.url}, stamp, word, entry.lastmod)
+            listings.pop(key, None)
+            stats["skipped"] += 1
+            continue
+        skipped.pop(key, None)
         _merge(listings, key, source.NAME, entry, data, stamp, changes, stats)
         if done % 25 == 0:
             log.info("%s: %d/%d pages opened", source.NAME, done, len(queue))
+    if stats["skipped"]:
+        log.info("%s: skipped %d listings in excluded categories (see the Skipped tab)", source.NAME, stats["skipped"])
     return stats
+
+
+def _skip(key: str, row: dict, stamp: str, word: str, lastmod: str | None = None) -> dict:
+    return {
+        "key": key,
+        "title": row.get("title", ""),
+        "reason": f"Excluded category ({word.lower()}): {row.get('category') or row.get('industry')}",
+        "source": key.split(":", 1)[0],
+        "url": row.get("url", ""),
+        "sitemap_lastmod": row.get("sitemap_lastmod", "") if lastmod is None else lastmod,
+        "skipped_at": stamp,
+    }
 
 
 def _merge(listings: dict, key: str, source_name: str, entry, data: dict, stamp: str, changes: list, stats: dict) -> None:
