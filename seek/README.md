@@ -4,6 +4,32 @@ SEEK turns away windowless (headless) bots, the kind that run on servers like Gi
 collected there. There are two ways to get its listings into the **SEEK listings** tab, and both use the same
 page-reading code and the same rules.
 
+## SEEK alert emails (automatic, on GitHub)
+
+SEEK emails new listings for a saved search. A bot on GitHub reads those emails every morning (8:13am Perth)
+and adds any listing that isn't in the sheet yet. Nothing visits SEEK, and your computer can be off. Food
+listings are skipped. The email gives title, price, location, industry and a summary; run **Check SEEK** now
+and then for full descriptions, phone numbers and price changes.
+
+Setup (once):
+
+1. **Make a Gmail just for alerts** (for example `yourname.seekalerts@gmail.com`). The bot gets a password for this
+   inbox, so keep it separate from your main email.
+2. In that Google account, turn on **2-Step Verification** (Google Account → Security). App passwords need it.
+3. Create an **app password** at <https://myaccount.google.com/apppasswords> (name it "SEEK alerts bot") and
+   copy the 16 letters.
+4. Add them to GitHub, from the project folder (each command asks you to paste):
+   ```bash
+   gh secret set GMAIL_ADDRESS
+   gh secret set GMAIL_APP_PASSWORD
+   ```
+5. In your normal browser, open the search below, click **Save search**, and sign in or register on SEEK with the
+   alerts Gmail so the alert emails go there:
+   <https://www.seekbusiness.com.au/businesses-for-sale/within-health-beauty-fitness-or-personal-services/in-perth-wa?rad=50&sort=1>
+
+The reader finds listings by their SEEK links, so it doesn't depend on the email's layout. After the first alert
+arrives, run it once by hand (Actions → **SEEK alert emails** → Run workflow) and check the SEEK listings tab.
+
 ## Check SEEK (on your Mac)
 
 Double-click **Check SEEK.command** in the project folder. A Chromium window opens and, at a person's pace

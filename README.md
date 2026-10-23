@@ -14,7 +14,7 @@ No AI and no paid services. It runs free on GitHub Actions, and Google Sheets is
 | Site | Status | How |
 |---|---|---|
 | [bsale.com.au](https://bsale.com.au) | ✅ Working | Public sitemap + listing pages. About 1,900 WA listings. |
-| SEEK Business | ✅ On your Mac | Turns away windowless bots, so it can't run on GitHub. Double-click **Check SEEK.command**: a visible Chromium window reads your searches. Or use the **Save to sheet** bookmark as you browse. See [seek/README.md](seek/README.md). |
+| SEEK Business | ✅ Alert emails + your Mac | Turns away windowless bots, so it isn't read on GitHub. A bot on GitHub reads SEEK's **alert emails** from a Gmail inbox every day; **Check SEEK.command** on your Mac adds full details. See [seek/README.md](seek/README.md). |
 | BusinessesForSale.com | ⛔ Not included | Cloudflare blocks automated requests outright. |
 | commercialrealestate.com.au | ⏳ Waiting | Domain's official API, once Domain approves access. |
 

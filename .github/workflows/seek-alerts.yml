@@ -1,0 +1,36 @@
+name: SEEK alert emails
+
+on:
+  schedule:
+    # Every day at 8:13am Perth (UTC+8), after SEEK's overnight alert emails.
+    - cron: '13 0 * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: seek-alerts
+  cancel-in-progress: false
+
+jobs:
+  read:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      TZ: Australia/Perth
+      SHEET_ID: ${{ secrets.SHEET_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      # Reading switches on by itself once both of these secrets exist.
+      GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+      GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Read SEEK alert emails
+        run: python -m bizbot seek-alerts --store sheet
