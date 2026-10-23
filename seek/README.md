@@ -32,7 +32,7 @@ arrives, run it once by hand (Actions → **SEEK alert emails** → Run workflow
 
 ## Check SEEK (on your Mac)
 
-Double-click **Check SEEK.command** in the project folder. A Chromium window opens and, at a person's pace
+Double-click **Check SEEK and CRE.command** in the project folder. A Chromium window opens and, at a person's pace
 (a few minutes):
 
 - reads the newest pages of each search in `config.toml` `[seek]` (3 pages ≈ 60 listings);

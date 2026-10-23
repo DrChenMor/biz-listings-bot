@@ -36,8 +36,10 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
+      # commercialrealestate.com.au turns away cloud servers, so it runs from your Mac instead
+      # ("Check SEEK and CRE.command"). Here: bsale only.
       - name: Run the bot
         run: >-
-          python -m bizbot run --store sheet
+          python -m bizbot run --store sheet --source bsale
           ${{ github.event_name == 'schedule' && '--jitter' || '' }}
           ${{ github.event.inputs.limit && format('--limit {0}', github.event.inputs.limit) || '' }}

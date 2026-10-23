@@ -70,8 +70,9 @@ class PoliteClient:
         if robots is None:
             robots = RobotFileParser()
             response = self.http.get(base + "/robots.txt")
-            if response.status_code in (401, 403):
-                robots.disallow_all = True
+            if response.status_code in (401, 403, 429):
+                # Refusing even robots.txt means the site is turning this connection away (e.g. cloud servers).
+                raise Blocked(f"HTTP {response.status_code} for {base}/robots.txt: the site refused this connection")
             elif response.status_code >= 400:
                 robots.allow_all = True
             else:

@@ -4,6 +4,9 @@ The state's results pages (/business-for-sale/wa/?pn=2 ...; 20 listings each) ca
 page. The bot reads all of them each run, then opens a listing's own page only when the listing is new or its
 card changed (headline, price, status or summary), for the full description and the agents' phone numbers.
 Food businesses are left out from the cards, so their pages are never opened.
+
+The site turns away cloud servers such as GitHub's, so this runs from your Mac ("Check SEEK and CRE.command"),
+and writes to its own tab so a Mac run and a GitHub run never rewrite the same tab at once.
 """
 import hashlib
 import json
@@ -13,9 +16,11 @@ from dataclasses import dataclass, field
 from .. import extract
 from ..config import Config
 from ..http import PoliteClient, Unavailable
+from ..store import COLUMNS, LISTINGS, Table
 
 NAME = "commercialrealestate"
 BASE = "https://www.commercialrealestate.com.au"
+TABLE = Table("CRE listings", COLUMNS, LISTINGS.numeric)
 
 _NEXT_DATA = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
 

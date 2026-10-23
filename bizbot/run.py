@@ -26,18 +26,29 @@ WATCHED = {
 def run(cfg: Config, store, limit: int | None = None, jitter: bool = False) -> list[dict]:
     if jitter:
         wait_randomly(cfg)
-    listings = store.load(LISTINGS)
-    skipped = store.load(SKIPPED)
+    # Each site writes to its own tab (Listings unless the source names another), and a run touches only the
+    # tabs of the sites in it. So a Mac run and a GitHub run never rewrite the same tab at once.
+    tables: dict[str, tuple] = {}
+    for name in cfg.sources:
+        table = getattr(SOURCES[name], "TABLE", LISTINGS)
+        if table.tab not in tables:
+            tables[table.tab] = (table, store.load(table))
+    # The Skipped tab goes with the Listings tab.
+    skipped = store.load(SKIPPED) if LISTINGS.tab in tables else None
     client = PoliteClient(cfg.user_agent, cfg.delay_seconds)
     changes: list[dict] = []
     runs: list[dict] = []
     try:
         for name in cfg.sources:
+            table = getattr(SOURCES[name], "TABLE", LISTINGS)
             max_pages = cfg.max_listings_per_run if limit is None else limit
-            runs.append(sync_source(SOURCES[name], cfg, client, listings, changes, max_pages, skipped))
+            source_skipped = skipped if table.tab == LISTINGS.tab else {}
+            runs.append(sync_source(SOURCES[name], cfg, client, tables[table.tab][1], changes, max_pages, source_skipped))
     finally:
-        store.save(LISTINGS, listings)
-        store.save(SKIPPED, skipped)
+        for table, rows in tables.values():
+            store.save(table, rows)
+        if skipped is not None:
+            store.save(SKIPPED, skipped)
         store.log(changes, runs)
     return runs
 

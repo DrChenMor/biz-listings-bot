@@ -32,7 +32,7 @@ enabled = true
 enabled = true
 
 [seek]
-# The "check SEEK" command (python -m bizbot seek, or double-click "Check SEEK.command").
+# The "check SEEK" command (python -m bizbot seek, or double-click "Check SEEK and CRE.command").
 # It runs on your Mac in a visible Chromium window, only when you start it.
 # Searches to read, newest first: health & personal services within 50 km of Perth.
 searches = [

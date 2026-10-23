@@ -136,6 +136,30 @@ def test_exclusion_matches_whole_words_only():
     assert not cfg.excluded("Beauty and Health", "Hair Salon")
 
 
+def test_each_site_writes_only_its_own_tab(tmp_path, monkeypatch):
+    from bizbot import run as run_module
+    from bizbot.store import COLUMNS, LISTINGS, LocalStore, Table
+
+    other_tab = Table("Other listings", COLUMNS)
+    main_site, mac_site = FakeSite(), FakeSite()
+    main_site.NAME, mac_site.NAME, mac_site.TABLE = "main", "mac", other_tab
+    main_site.add("1", "t1")
+    mac_site.add("2", "t1")
+    monkeypatch.setitem(run_module.SOURCES, "main", main_site)
+    monkeypatch.setitem(run_module.SOURCES, "mac", mac_site)
+    store, cfg = LocalStore(tmp_path), config.load()
+
+    cfg.sources = ["mac"]
+    run_module.run(cfg, store, limit=10)
+    assert set(store.load(other_tab)) == {"mac:2"}
+    assert not (tmp_path / "listings.json").exists() and not (tmp_path / "skipped.json").exists()
+
+    cfg.sources = ["main"]
+    run_module.run(cfg, store, limit=10)
+    assert set(store.load(LISTINGS)) == {"main:1"}
+    assert (tmp_path / "skipped.json").exists()
+
+
 def test_blocking_stops_the_source_and_keeps_what_was_collected():
     site, listings, changes = FakeSite(), {}, []
     for i in ("1", "2", "3"):
