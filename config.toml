@@ -28,6 +28,20 @@ exclude_categories = [
 [sources.bsale]
 enabled = true
 
+[seek]
+# The "check SEEK" command (python -m bizbot seek, or double-click "Check SEEK.command").
+# It runs on your Mac in a visible Chromium window, only when you start it.
+# Searches to read, newest first: health & personal services within 50 km of Perth.
+searches = [
+  "https://www.seekbusiness.com.au/businesses-for-sale/within-health-beauty-fitness-or-personal-services/in-perth-wa?rad=50&sort=1",
+]
+# Result pages to read per search (about 20 listings each). The newest listings are on page 1.
+pages = 3
+# Listing pages to open per run for the full description and phone numbers (newest first).
+details = 10
+# Random pause between pages, in seconds.
+delay_seconds = [5, 12]
+
 [health]
 # Suburbs to cover, written the way healthdirect writes them: suburb-postcode-state.
 suburbs = ["subiaco-6008-wa"]

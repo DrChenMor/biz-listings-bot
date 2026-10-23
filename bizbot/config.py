@@ -18,6 +18,14 @@ class HealthConfig:
 
 
 @dataclass
+class SeekConfig:
+    searches: list[str]
+    pages: int
+    details: int
+    delay_seconds: tuple[float, float]
+
+
+@dataclass
 class AbnConfig:
     recheck_days: int
     max_businesses_per_run: int
@@ -35,6 +43,7 @@ class Config:
     # Matches industries/categories every bot skips (food businesses); None when the list is empty.
     exclude: re.Pattern | None
     sources: list[str]
+    seek: SeekConfig
     health: HealthConfig
     abn: AbnConfig
 
@@ -46,7 +55,7 @@ class Config:
 
 def load(path: Path = ROOT / "config.toml") -> Config:
     raw = tomllib.loads(Path(path).read_text())
-    bot, filters, health, abn = raw["bot"], raw["filters"], raw["health"], raw["abn"]
+    bot, filters, seek, health, abn = raw["bot"], raw["filters"], raw["seek"], raw["health"], raw["abn"]
     return Config(
         max_listings_per_run=bot["max_listings_per_run"],
         delay_seconds=tuple(bot["delay_seconds"]),
@@ -56,6 +65,12 @@ def load(path: Path = ROOT / "config.toml") -> Config:
         perth_postcodes=[tuple(r) for r in filters["perth_postcodes"]],
         exclude=_word_pattern(filters.get("exclude_categories", [])),
         sources=[name for name, s in raw["sources"].items() if s.get("enabled", True)],
+        seek=SeekConfig(
+            searches=list(seek["searches"]),
+            pages=seek["pages"],
+            details=seek["details"],
+            delay_seconds=tuple(seek["delay_seconds"]),
+        ),
         health=HealthConfig(
             suburbs=[s.lower() for s in health["suburbs"]],
             postcode_ranges=[tuple(r) for r in health["postcode_ranges"]],

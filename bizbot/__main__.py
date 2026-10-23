@@ -2,8 +2,9 @@
 
   python -m bizbot run      businesses for sale (bsale) -> Listings tab
   python -m bizbot health   health practices by suburb (healthdirect + ABN) -> Health businesses tab
+  python -m bizbot seek     your SEEK Business searches, in a visible window on your Mac -> SEEK listings tab
 
-Both take [--store sheet|local] [--limit N] [--jitter].
+All take [--store sheet|local] [--limit N] [--jitter]. For seek, --limit is result pages per search.
 """
 import argparse
 import json
@@ -12,7 +13,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import config, health
+from . import config, health, seek
 from .run import run
 from .store import LocalStore, SheetError, SheetStore
 
@@ -34,8 +35,9 @@ def main() -> int:
     commands = parser.add_subparsers(dest="command", required=True)
     commands.add_parser("run", parents=[options], help="Businesses for sale (bsale) -> Listings tab")
     commands.add_parser("health", parents=[options], help="Health practices by suburb, with ABN owners -> Health businesses tab")
+    commands.add_parser("seek", parents=[options], help="Your SEEK Business searches, in a visible window on your Mac -> SEEK listings tab")
     args = parser.parse_args()
-    job = health.run if args.command == "health" else run
+    job = {"run": run, "health": health.run, "seek": seek.run}[args.command]
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,

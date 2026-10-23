@@ -1,8 +1,29 @@
-# Save to sheet: SEEK Business listings, saved as you browse
+# SEEK Business listings
 
-SEEK Business blocks automated browsers, so no bot visits it. Instead, you browse SEEK as normal and click a
-**Save to sheet** bookmark. It reads the listings on the page you're looking at and adds them to the
-**SEEK listings** tab of your Google Sheet:
+SEEK turns away windowless (headless) bots, the kind that run on servers like GitHub's, so SEEK can't be
+collected there. There are two ways to get its listings into the **SEEK listings** tab, and both use the same
+page-reading code and the same rules.
+
+## Check SEEK (on your Mac)
+
+Double-click **Check SEEK.command** in the project folder. A Chromium window opens and, at a person's pace
+(a few minutes):
+
+- reads the newest pages of each search in `config.toml` `[seek]` (3 pages ≈ 60 listings);
+- opens up to 10 listings that don't have their full description yet, for the description and the broker's
+  phone numbers;
+- saves everything to the **SEEK listings** tab, with the same no-duplicates, change-tracking and no-food rules.
+
+You can watch it, or click into the window and take over at any time. It runs only when you start it. If SEEK
+ever shows a security check, it stops and says so; it never tries to get past one.
+
+First time on a new Mac: `.venv/bin/pip install -r requirements-mac.txt && .venv/bin/playwright install chromium`,
+then copy `.env.example` to `.env` and fill in your sheet ID and key file path.
+
+## Save to sheet bookmark (as you browse)
+
+You browse SEEK as normal and click a **Save to sheet** bookmark. It reads the listings on the page you're
+looking at and adds them to the **SEEK listings** tab:
 
 - **On a results page**, it saves all 20 listings: title, price, type, location, industry, advertiser and summary.
 - **On a single listing**, it also saves the full description, including the broker's name and phone number

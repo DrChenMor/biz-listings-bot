@@ -15,12 +15,13 @@ _PER_MONTH = re.compile(r"^\s*(?:(?:per|a|/|p\.?)\s*(?:month|mth)\b|pm\b|p/m\b|m
 # Words between a keyword and an amount that mean the amount is the asking price, not turnover or profit.
 _PRICE_WORDS = re.compile(r"asking|price|priced|offers|\bsav\b|stock|rent|lease", re.I)
 
-_TURNOVER = re.compile(r"\b(?:turnover|revenue|gross sales|annual sales|sales|takings|averaging)\b", re.I)
-_PROFIT = re.compile(
-    r"\b(?:adjusted net profit|net profit|ebitda|ebit|profit|net income|sde"
-    r"|owner'?s? (?:earnings|benefit|income|return)|return to (?:the )?owners?)\b",
-    re.I,
-)
+_TURNOVER_WORDS = r"turnover|revenue|gross sales|annual sales|sales|takings"
+_PROFIT_WORDS = r"adjusted net profit|net profit|ebitda|ebit|profit|net income|sde|owner'?s? (?:earnings|benefit|income|return)|return to (?:the )?owners?"
+_TURNOVER = re.compile(rf"\b(?:{_TURNOVER_WORDS}|averaging)\b", re.I)
+_PROFIT = re.compile(rf"\b(?:{_PROFIT_WORDS})\b", re.I)
+# Words allowed between an amount and its keyword, as in "$13K weekly sales" or "~$160K net profit".
+_LEAD_IN = r"^\s*((?:(?:weekly|per week|a week|monthly|per month|annual|yearly|approx\.?|approximately|in|of)\s+)*)(?:net\s+)?(?:{words})\b"
+_PHONE = re.compile(r"(?:\+?61\s?|\b0)[2-478](?:[ -]?\d){8}\b|\b1[38]00(?:[ -]?\d){6}\b|\b13(?:[ -]?\d){4}\b")
 _PROFIT_TYPES = [
     ("adjusted", "Adjusted net profit"),
     ("pebitda", "PEBITDA"),
@@ -74,12 +75,16 @@ def price(price_text: str) -> int | None:
 
 
 def turnover(text: str) -> int | None:
-    value, _ = _amount_after(_TURNOVER, text)
+    value, _ = _amount_before(_TURNOVER_WORDS, text)
+    if value is None:
+        value, _ = _amount_after(_TURNOVER, text)
     return value
 
 
 def profit(text: str) -> tuple[int | None, str]:
-    value, wording = _amount_after(_PROFIT, text)
+    value, wording = _amount_before(_PROFIT_WORDS, text)
+    if value is None:
+        value, wording = _amount_after(_PROFIT, text)
     if value is None:
         return None, ""
     wording = wording.lower()
@@ -149,6 +154,37 @@ def _amount(match: re.Match) -> int:
     elif suffix:
         value *= 1_000_000
     return int(round(value))
+
+
+def phones(text: str) -> list[str]:
+    """Australian phone numbers written in the text (usually the broker's), each once."""
+    found, seen = [], set()
+    for number in _PHONE.findall(text or ""):
+        digits = re.sub(r"\D", "", number)
+        digits = "0" + digits[2:] if digits.startswith("61") else digits
+        if digits not in seen:
+            seen.add(digits)
+            found.append(number.strip())
+    return found
+
+
+def _amount_before(words: str, text: str) -> tuple[int | None, str]:
+    """An amount followed by its keyword: "$13K weekly sales" (yearly: x52), "~$160K net profit"."""
+    lead_in = re.compile(_LEAD_IN.format(words=words), re.I)
+    for match in _MONEY.finditer(text or ""):
+        if _YEAR.fullmatch(match.group(1)) and not match.group(2):
+            continue
+        hit = lead_in.match(text[match.end(): match.end() + 40])
+        if not hit:
+            continue
+        value = _amount(match)
+        if "week" in hit.group(1).lower():
+            value *= 52
+        elif "month" in hit.group(1).lower():
+            value *= 12
+        if value >= 1_000:
+            return value, hit.group(0)
+    return None, ""
 
 
 def _amount_after(keyword: re.Pattern, text: str, window: int = 80) -> tuple[int | None, str]:

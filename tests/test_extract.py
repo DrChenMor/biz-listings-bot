@@ -28,6 +28,18 @@ def test_turnover_skips_words_and_annualises_weekly_takings():
     assert extract.turnover("All sales are cash, so there are no debtors, and $250,000 in orders") is None
 
 
+def test_amount_written_before_its_keyword():
+    text = "Established 23+ years, this salon delivers $13K weekly sales and ~$160K net profit, with 11 stations."
+    assert extract.turnover(text) == 13_000 * 52
+    assert extract.profit(text) == (160_000, "Net profit")
+    assert extract.turnover("$1.2m annual turnover") == 1_200_000
+
+
+def test_phone_numbers_found_once_each():
+    text = "Call John on 0422 930 549 or 1300 366 521. Mobile: 0422930549. Office +61 8 9381 1111"
+    assert extract.phones(text) == ["0422 930 549", "1300 366 521", "+61 8 9381 1111"]
+
+
 def test_profit_and_type():
     assert extract.profit("EBITDA of $210,000 last year") == (210_000, "EBITDA")
     assert extract.profit("Adjusted net profit $95k") == (95_000, "Adjusted net profit")

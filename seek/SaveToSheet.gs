@@ -404,27 +404,44 @@ function seekBookmarklet(webAppUrl, dryRun) {
       try { var d = JSON.parse(s.textContent); if (d["@type"] === "Product") product = d; } catch (e) {}
     });
     var offer = product.offers || {};
-    var body = document.body.innerText;
-    var lines = body.split("\n").map(function (l) { return l.trim(); }).filter(Boolean);
+    var lines = document.body.innerText.split("\n").map(function (l) { return l.trim(); }).filter(Boolean);
     var title = text(document.querySelector("h1"));
     var start = Math.max(0, lines.indexOf(title));
-    var head = lines.slice(start, start + 15);
+    var head = lines.slice(start, start + 20);
+    // Franchise pages label their facts ("Type:" then the value on the next line); business pages
+    // put them inline ("Type: Business") or unlabelled.
+    var labelled = function (label) {
+      for (var i = 0; i < head.length; i++) {
+        if (head[i].toLowerCase() === label.toLowerCase() + ":") return head[i + 1] || "";
+        if (head[i].toLowerCase().indexOf(label.toLowerCase() + ": ") === 0) return head[i].slice(label.length + 1).trim();
+      }
+      return "";
+    };
     var typeAt = -1;
     for (var i = 0; i < head.length; i++) if (/^Type:/i.test(head[i])) typeAt = i;
     var pick = function (from, to, test) { for (var j = from; j < to; j++) if (head[j] && test(head[j])) return head[j]; return ""; };
-    var about = (body.split(/\nAbout the Business\n/)[1] || "").split(/\nSend an enquiry\n|\nFind out more at |\nShare this business/)[0];
+    var beforeType = typeAt < 0 ? head.length : typeAt;
+    // The description: every section from "Summary" down to the enquiry form.
+    var from = lines.indexOf("Summary");
+    var to = lines.length;
+    for (var k = from + 1; k < lines.length; k++) {
+      if (/^(Send an enquiry|Share this business|You might also like|Enquiry sent|Find out more at )/.test(lines[k])) {
+        to = k;
+        break;
+      }
+    }
     listings.push({
       id: pageId,
       url: location.origin + location.pathname,
       title: title,
-      location: pick(1, typeAt < 0 ? head.length : typeAt, function (l) { return / > /.test(l); }),
-      price_text: pick(1, typeAt < 0 ? head.length : typeAt, function (l) { return /^(\$|P\.?O\.?A|Price|Negotiable|Contact)/i.test(l); }),
+      location: labelled("Location") || pick(1, beforeType, function (l) { return / > /.test(l); }),
+      price_text: labelled("Investment level") || pick(1, beforeType, function (l) { return /^(\$|P\.?O\.?A|Price|Negotiable|Contact)/i.test(l); }),
       price_min: offer.price || "",
-      opportunity_type: typeAt >= 0 ? head[typeAt].replace(/^Type:\s*/i, "") : "",
-      industry: typeAt >= 0 ? pick(typeAt + 1, head.length, function (l) { return / > /.test(l); }) : "",
+      opportunity_type: labelled("Type"),
+      industry: labelled("Industry") || (typeAt >= 0 ? pick(typeAt + 1, head.length, function (l) { return / > /.test(l); }) : ""),
       advertiser: (offer.seller || {}).name || "",
       summary: product.description || "",
-      description: about.trim(),
+      description: from >= 0 ? lines.slice(from + 1, to).join("\n") : "",
     });
   } else {
     // A results page: every listing card on it.
