@@ -1,0 +1,20 @@
+# Settings for the business listings bot.
+
+[bot]
+# Most listing pages to open in one run. New listings go first; the rest wait for the next run.
+max_listings_per_run = 400
+# Random pause between page requests, in seconds.
+delay_seconds = [3, 8]
+# Scheduled runs wait a random number of minutes before starting.
+# GitHub Actions counts this waiting time against private-repo minutes, so keep it small.
+start_jitter_minutes = [0, 10]
+user_agent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/155.0.0.0 Safari/537.36"
+
+[filters]
+# Australian state code to collect (wa, nsw, vic, qld, sa, tas, nt, act).
+state = "wa"
+# Postcode ranges counted as Perth metro in the "Perth metro" column.
+perth_postcodes = [[6000, 6199]]
+
+[sources.bsale]
+enabled = true

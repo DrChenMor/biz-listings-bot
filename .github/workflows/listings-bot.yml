@@ -1,0 +1,43 @@
+name: Business listings bot
+
+on:
+  schedule:
+    # Perth time is UTC+8. Three runs a day at odd minutes; each scheduled run also
+    # waits a random 0-10 minutes before it starts (see start_jitter_minutes in config.toml).
+    - cron: '23 22 * * *'  # 6:23am Perth
+    - cron: '47 4 * * *'   # 12:47pm Perth
+    - cron: '11 10 * * *'  # 6:11pm Perth
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: Most listing pages to open this run (blank = config.toml)
+        required: false
+
+concurrency:
+  group: listings-bot
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TZ: Australia/Perth
+      SHEET_ID: ${{ secrets.SHEET_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the bot
+        run: >-
+          python -m bizbot run --store sheet
+          ${{ github.event_name == 'schedule' && '--jitter' || '' }}
+          ${{ github.event.inputs.limit && format('--limit {0}', github.event.inputs.limit) || '' }}
