@@ -16,6 +16,7 @@ from pathlib import Path
 
 from . import config, health, seek, seek_alerts
 from .run import run
+from .sources import SOURCES
 from .store import LocalStore, SheetError, SheetStore
 
 log = logging.getLogger("bizbot")
@@ -31,6 +32,7 @@ def main() -> int:
     )
     options.add_argument("--limit", type=int, help="Most pages to open this run (default: config.toml)")
     options.add_argument("--jitter", action="store_true", help="Wait a random time first (for scheduled runs)")
+    options.add_argument("--source", action="append", help="run: only this listing site (repeatable), e.g. --source bsale")
     options.add_argument("-v", "--verbose", action="store_true")
     parser = argparse.ArgumentParser(prog="bizbot", description="Collect businesses into a Google Sheet.")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -49,6 +51,11 @@ def main() -> int:
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     cfg = config.load()
+    if args.source:
+        unknown = set(args.source) - set(SOURCES)
+        if unknown:
+            parser.error(f"unknown source {', '.join(sorted(unknown))}; choose from {', '.join(SOURCES)}")
+        cfg.sources = args.source
     try:
         if args.store == "sheet":
             if not os.environ.get("SHEET_ID"):

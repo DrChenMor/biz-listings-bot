@@ -28,6 +28,9 @@ exclude_categories = [
 [sources.bsale]
 enabled = true
 
+[sources.commercialrealestate]
+enabled = true
+
 [seek]
 # The "check SEEK" command (python -m bizbot seek, or double-click "Check SEEK.command").
 # It runs on your Mac in a visible Chromium window, only when you start it.
