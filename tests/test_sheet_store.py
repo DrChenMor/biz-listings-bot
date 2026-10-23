@@ -1,6 +1,11 @@
-import gspread
+import json
 
-from bizbot.store import HEADERS, SheetStore
+import gspread
+import pytest
+
+from bizbot.store import HEADERS, SheetError, SheetStore, sheet_id_from
+
+SHEET_ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcd"
 
 
 class FakeWorksheet:
@@ -72,3 +77,53 @@ def test_new_rows_go_on_top_and_your_own_columns_stay_with_their_listing():
     assert rows["Business 1"][len(HEADERS)] == "yes"
     assert rows["Business 1"][HEADERS.index("Price (AUD)")] == 90_000
     assert len(store.changes_ws.grid) == 1 and len(store.runs_ws.grid) == 1
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        SHEET_ID,
+        f"  {SHEET_ID}\n",
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit#gid=0",
+        f"https://docs.google.com/spreadsheets/d/{SHEET_ID}/edit?usp=sharing",
+        f"{SHEET_ID}/edit#gid=0",
+    ],
+)
+def test_sheet_id_accepts_the_id_or_the_whole_link(value):
+    assert sheet_id_from(value) == SHEET_ID
+
+
+def test_sheet_id_rejects_anything_else():
+    with pytest.raises(SheetError):
+        sheet_id_from("my sheet")
+
+
+class FakeResponse:
+    def __init__(self, status, body):
+        self.status_code, self._body = status, body
+        self.text = body if isinstance(body, str) else json.dumps(body)
+
+    def json(self):
+        if isinstance(self._body, str):
+            raise ValueError("not JSON")
+        return self._body
+
+
+def explain(status, body):
+    store = make_store()
+    store.service_account = "bot@listings-bot.iam.gserviceaccount.com"
+    with pytest.raises(SheetError) as caught, store._explained():
+        raise gspread.exceptions.APIError(FakeResponse(status, body))
+    return str(caught.value)
+
+
+def google_error(code, message):
+    return {"error": {"code": code, "message": message, "status": "X"}}
+
+
+def test_google_errors_become_one_plain_sentence():
+    assert "web page instead of sheet data" in explain(404, "<!DOCTYPE html><html>Page Not Found</html>")
+    assert "turned off" in explain(403, google_error(403, "Google Sheets API has not been used in project 1 before or it is disabled."))
+    assert "Share the sheet with bot@listings-bot.iam.gserviceaccount.com" in explain(403, google_error(403, "The caller does not have permission"))
+    assert "can't find a sheet" in explain(404, google_error(404, "Requested entity was not found."))
+    assert explain(500, google_error(500, "Internal error")) == "Google Sheets error 500: Internal error"

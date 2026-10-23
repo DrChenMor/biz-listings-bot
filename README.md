@@ -66,7 +66,7 @@ description edit, with the old and new values.
 
 1. Push this folder to a GitHub repository.
 2. **Settings → Secrets and variables → Actions → New repository secret**, add:
-   - `SHEET_ID`: the sheet ID
+   - `SHEET_ID`: the sheet ID, or the sheet's whole link
    - `GOOGLE_SERVICE_ACCOUNT_JSON`: paste the whole contents of the `.json` key file
 3. **Actions → Business listings bot → Run workflow** to start the first fill now.
 

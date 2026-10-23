@@ -8,7 +8,7 @@ from pathlib import Path
 
 from . import config
 from .run import run
-from .store import LocalStore, SheetStore
+from .store import LocalStore, SheetError, SheetStore
 
 log = logging.getLogger("bizbot")
 
@@ -36,14 +36,20 @@ def main() -> int:
     logging.getLogger("httpx").setLevel(logging.WARNING)
 
     cfg = config.load()
-    if args.store == "sheet":
-        if not os.environ.get("SHEET_ID"):
-            sys.exit("SHEET_ID is not set. Use --store local to test without a Google Sheet.")
-        store = SheetStore(os.environ["SHEET_ID"], _google_credentials())
-    else:
-        store = LocalStore(config.ROOT / "data")
+    try:
+        if args.store == "sheet":
+            if not os.environ.get("SHEET_ID"):
+                raise SheetError("SHEET_ID is not set. Use --store local to test without a Google Sheet.")
+            store = SheetStore(os.environ["SHEET_ID"], _google_credentials())
+        else:
+            store = LocalStore(config.ROOT / "data")
+        results = run(cfg, store, limit=args.limit, jitter=args.jitter)
+    except SheetError as e:
+        log.error("%s", e)
+        if os.environ.get("GITHUB_ACTIONS") == "true":
+            print(f"::error title=Google Sheet::{e}")  # shows on the run's summary page
+        return 1
 
-    results = run(cfg, store, limit=args.limit, jitter=args.jitter)
     for r in results:
         log.info(
             "%s: %d new, %d updated, %d removed, %d pages opened, %d left for next run, %d errors -> %s",
@@ -53,11 +59,21 @@ def main() -> int:
 
 
 def _google_credentials() -> dict:
-    if raw := os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON"):
+    raw, path = os.environ.get("GOOGLE_SERVICE_ACCOUNT_JSON"), os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE")
+    if not raw and path:
+        try:
+            raw = Path(path).expanduser().read_text()
+        except OSError as e:
+            raise SheetError(f"Can't read the key file in GOOGLE_SERVICE_ACCOUNT_FILE: {e}") from None
+    if not raw:
+        raise SheetError("Set GOOGLE_SERVICE_ACCOUNT_JSON (the key's JSON text) or GOOGLE_SERVICE_ACCOUNT_FILE (its path).")
+    try:
         return json.loads(raw)
-    if path := os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE"):
-        return json.loads(Path(path).expanduser().read_text())
-    sys.exit("Set GOOGLE_SERVICE_ACCOUNT_JSON (the key's JSON text) or GOOGLE_SERVICE_ACCOUNT_FILE (its path).")
+    except json.JSONDecodeError:
+        raise SheetError(
+            "GOOGLE_SERVICE_ACCOUNT_JSON isn't valid JSON. Set it straight from the key file: "
+            "gh secret set GOOGLE_SERVICE_ACCOUNT_JSON < path/to/key.json"
+        ) from None
 
 
 if __name__ == "__main__":

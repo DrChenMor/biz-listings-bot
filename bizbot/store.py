@@ -9,9 +9,30 @@ The Google Sheet has three tabs:
 import csv
 import json
 import logging
+import re
+from contextlib import contextmanager
 from pathlib import Path
 
 log = logging.getLogger(__name__)
+
+
+class SheetError(Exception):
+    """A Google Sheets problem, explained in plain words."""
+
+
+_NOT_FOUND = (
+    "Google can't find a sheet with that ID. Check SHEET_ID: use the sheet's link, or the part "
+    "between /d/ and /edit (setup step 3)."
+)
+
+
+def sheet_id_from(value: str) -> str:
+    """The sheet ID, given either the ID itself or the sheet's full link."""
+    value = (value or "").strip()
+    match = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]+)", value) or re.fullmatch(r"([A-Za-z0-9_-]{20,})(?:[/?#].*)?", value)
+    if not match:
+        raise SheetError("SHEET_ID doesn't look like a Google Sheet ID or link. Set it to the sheet's link, or the part between /d/ and /edit.")
+    return match.group(1)
 
 # (field, column header). The order here is the column order in the sheet.
 COLUMNS = [
@@ -122,16 +143,28 @@ class SheetStore:
         import gspread
 
         self._gspread = gspread
-        book = gspread.service_account_from_dict(credentials).open_by_key(sheet_id)
-        self.listings_ws = self._worksheet(book, "Listings", HEADERS)
-        self.changes_ws = self._worksheet(book, "Changes", [h for _, h in CHANGE_COLUMNS])
-        self.runs_ws = self._worksheet(book, "Runs", [h for _, h in RUN_COLUMNS])
+        self.service_account = credentials.get("client_email") or "the service account"
         self._row_keys: list[str] = []
+        with self._explained():
+            try:
+                # The back-off client retries when Google says "too many requests" or has a hiccup.
+                client = gspread.service_account_from_dict(credentials, http_client=gspread.BackOffHTTPClient)
+            except ValueError:
+                raise SheetError(
+                    "GOOGLE_SERVICE_ACCOUNT_JSON isn't a complete service account key. Set it straight from the "
+                    "key file: gh secret set GOOGLE_SERVICE_ACCOUNT_JSON < path/to/key.json"
+                ) from None
+            book = client.open_by_key(sheet_id_from(sheet_id))
+            log.info("Opened Google Sheet %r", book.title)
+            self.listings_ws = self._worksheet(book, "Listings", HEADERS)
+            self.changes_ws = self._worksheet(book, "Changes", [h for _, h in CHANGE_COLUMNS])
+            self.runs_ws = self._worksheet(book, "Runs", [h for _, h in RUN_COLUMNS])
 
     def load(self) -> dict[str, dict]:
-        values = self.listings_ws.get_all_values(
-            value_render_option=self._gspread.utils.ValueRenderOption.unformatted
-        )
+        with self._explained():
+            values = self.listings_ws.get_all_values(
+                value_render_option=self._gspread.utils.ValueRenderOption.unformatted
+            )
         if values and values[0][: len(HEADERS)] != HEADERS:
             log.warning("Listings header row differs from the bot's columns; it will be rewritten")
         listings = {}
@@ -153,20 +186,57 @@ class SheetStore:
         known = set(self._row_keys)
         new_keys = sorted((k for k in listings if k not in known), key=lambda k: _number(listings[k].get("listing_id")) or 0, reverse=True)
         ws = self.listings_ws
-        if new_keys:
-            # Insert whole rows at the top so your own columns shift down with the bot's.
-            ws.insert_rows([[""]] * len(new_keys), row=2)
-        if ws.col_count < len(HEADERS):
-            ws.add_cols(len(HEADERS) - ws.col_count)
         order = new_keys + self._row_keys
         body = [HEADERS] + [_row(listings[k], COLUMNS) if k in listings else [""] * len(COLUMNS) for k in order]
-        ws.update(values=body, range_name="A1", value_input_option="RAW")
-        if changes:
-            self.changes_ws.append_rows([_row(c, CHANGE_COLUMNS) for c in changes], value_input_option="RAW")
-        if runs:
-            self.runs_ws.append_rows([_row(r, RUN_COLUMNS) for r in runs], value_input_option="RAW")
+        with self._explained():
+            if new_keys:
+                # Insert whole rows at the top so your own columns shift down with the bot's.
+                ws.insert_rows([[""]] * len(new_keys), row=2)
+            if ws.col_count < len(HEADERS):
+                ws.add_cols(len(HEADERS) - ws.col_count)
+            ws.update(values=body, range_name="A1", value_input_option="RAW")
+            if changes:
+                self.changes_ws.append_rows([_row(c, CHANGE_COLUMNS) for c in changes], value_input_option="RAW")
+            if runs:
+                self.runs_ws.append_rows([_row(r, RUN_COLUMNS) for r in runs], value_input_option="RAW")
         self._row_keys = order
         log.info("Saved %d listings (%d new rows) and %d changes to the sheet", len(listings), len(new_keys), len(changes))
+
+    @contextmanager
+    def _explained(self):
+        """Turn Google's errors (sometimes a whole HTML page) into one plain sentence."""
+        from google.auth.exceptions import RefreshError, TransportError
+
+        try:
+            yield
+        except self._gspread.exceptions.SpreadsheetNotFound:
+            raise SheetError(_NOT_FOUND) from None
+        except self._gspread.exceptions.APIError as e:
+            raise SheetError(self._explain(e)) from None
+        except RefreshError:
+            raise SheetError(
+                "Google refused the service account key; it may have been deleted or disabled. Create a new key "
+                "(setup step 2) and update GOOGLE_SERVICE_ACCOUNT_JSON."
+            ) from None
+        except TransportError as e:
+            raise SheetError(f"Couldn't reach Google ({e}). The next run will try again.") from None
+
+    def _explain(self, error) -> str:
+        message = str(error.error.get("message", ""))
+        if error.code == -1:
+            return (
+                "Google answered with a web page instead of sheet data, which usually means SHEET_ID is wrong. "
+                "Set it to the sheet's link, or the part between /d/ and /edit."
+            )
+        if error.code == 403 and ("has not been used" in message or "is disabled" in message):
+            return "The Google Sheets API is turned off for this key's Google Cloud project. Turn it on (setup step 1), wait 5 minutes and run again."
+        if error.code == 403:
+            return f"The bot isn't allowed to open this sheet. Share the sheet with {self.service_account} as Editor (setup step 3)."
+        if error.code == 404:
+            return _NOT_FOUND
+        if error.code == 429:
+            return "Google's rate limit was still hit after retrying. The next run will carry on."
+        return f"Google Sheets error {error.code}: {message[:300]}"
 
     def _worksheet(self, book, title: str, headers: list[str]):
         try:
