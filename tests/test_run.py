@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+import pytest
+
 from bizbot import config
 from bizbot.http import Blocked
 from bizbot.run import sync_source
@@ -82,6 +84,25 @@ def test_page_limit_leaves_a_backlog_and_newest_go_first():
     stats = sync(site, listings, changes, limit=2)
     assert (stats["fetched"], stats["backlog"]) == (2, 1)
     assert sorted(site.opened) == ["11", "12"]
+
+
+def test_a_listing_index_that_is_a_web_page_is_skipped_not_a_crash():
+    import httpx
+
+    from bizbot.http import Unavailable, parse_xml
+
+    busy = httpx.Response(200, text="<html><head><title>Server busy</title></head><body><p>try later</body></html>")
+    with pytest.raises(Unavailable, match="Server busy"):
+        parse_xml(busy, "bsale's listing index")
+
+    class BusySite(FakeSite):
+        def list_entries(self, client, cfg):
+            parse_xml(busy, "bsale's listing index")
+
+    listings = {"fake:1": {"key": "fake:1", "source": "fake", "status": "Active"}}
+    stats = sync(BusySite(), listings, [])
+    assert stats["result"].startswith("listing index unavailable")
+    assert listings["fake:1"]["status"] == "Active"  # nothing marked removed
 
 
 def test_blocking_stops_the_source_and_keeps_what_was_collected():

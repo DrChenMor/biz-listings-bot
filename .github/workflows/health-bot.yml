@@ -1,0 +1,42 @@
+name: Health businesses bot
+
+on:
+  schedule:
+    # Once a day at 7:37pm Perth (UTC+8), plus a random 0-10 minute wait before starting.
+    - cron: '37 11 * * *'
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: Most healthdirect pages to open this run (blank = config.toml)
+        required: false
+
+concurrency:
+  group: health-bot
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TZ: Australia/Perth
+      SHEET_ID: ${{ secrets.SHEET_ID }}
+      GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      # ABN matching switches on by itself once this secret exists.
+      ABN_GUID: ${{ secrets.ABN_GUID }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run the bot
+        run: >-
+          python -m bizbot health --store sheet
+          ${{ github.event_name == 'schedule' && '--jitter' || '' }}
+          ${{ github.event.inputs.limit && format('--limit {0}', github.event.inputs.limit) || '' }}

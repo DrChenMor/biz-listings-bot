@@ -3,7 +3,7 @@ import json
 import gspread
 import pytest
 
-from bizbot.store import HEADERS, SheetError, SheetStore, sheet_id_from
+from bizbot.store import HEADERS, LISTINGS, SheetError, SheetStore, sheet_id_from
 
 SHEET_ID = "1AbCdEfGhIjKlMnOpQrStUvWxYz0123456789_-abcd"
 
@@ -45,8 +45,8 @@ class FakeWorksheet:
 def make_store():
     store = SheetStore.__new__(SheetStore)
     store._gspread = gspread
-    store.listings_ws, store.changes_ws, store.runs_ws = FakeWorksheet([list(HEADERS)]), FakeWorksheet(), FakeWorksheet()
-    store._row_keys = []
+    store._worksheets = {"Listings": FakeWorksheet([list(HEADERS)]), "Changes": FakeWorksheet(), "Runs": FakeWorksheet()}
+    store._row_keys = {}
     return store
 
 
@@ -56,9 +56,9 @@ def listing(i, price=100_000):
 
 def test_new_rows_go_on_top_and_your_own_columns_stay_with_their_listing():
     store = make_store()
-    assert store.load() == {}
-    store.save({"bsale:1": listing(1), "bsale:2": listing(2)}, [], [])
-    grid = store.listings_ws.grid
+    assert store.load(LISTINGS) == {}
+    store.save(LISTINGS, {"bsale:1": listing(1), "bsale:2": listing(2)})
+    grid = store._worksheets["Listings"].grid
     title = HEADERS.index("Title")
     assert [row[title] for row in grid[1:]] == ["Business 2", "Business 1"]
 
@@ -66,17 +66,18 @@ def test_new_rows_go_on_top_and_your_own_columns_stay_with_their_listing():
     grid[0].append("Contacted?")
     grid[2].append("yes")
 
-    listings = store.load()
+    listings = store.load(LISTINGS)
     assert listings["bsale:1"]["price_aud"] == 100_000  # numbers come back as numbers
     listings["bsale:3"] = listing(3)
     listings["bsale:1"]["price_aud"] = 90_000
-    store.save(listings, [{"when": "now", "what": "Asking price"}], [{"source": "bsale", "result": "ok"}])
+    store.save(LISTINGS, listings)
+    store.log([{"when": "now", "what": "Asking price"}], [{"source": "bsale", "result": "ok"}])
 
-    rows = {row[title]: row for row in store.listings_ws.grid[1:]}
-    assert [row[title] for row in store.listings_ws.grid[1:]] == ["Business 3", "Business 2", "Business 1"]
+    rows = {row[title]: row for row in store._worksheets["Listings"].grid[1:]}
+    assert [row[title] for row in store._worksheets["Listings"].grid[1:]] == ["Business 3", "Business 2", "Business 1"]
     assert rows["Business 1"][len(HEADERS)] == "yes"
     assert rows["Business 1"][HEADERS.index("Price (AUD)")] == 90_000
-    assert len(store.changes_ws.grid) == 1 and len(store.runs_ws.grid) == 1
+    assert len(store._worksheets["Changes"].grid) == 1 and len(store._worksheets["Runs"].grid) == 1
 
 
 @pytest.mark.parametrize(

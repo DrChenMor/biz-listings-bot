@@ -1,40 +1,37 @@
-"""Where listings live: a Google Sheet for real runs, or local files for testing.
+"""Where the bot's data lives: a Google Sheet for real runs, or local files for testing.
 
-The Google Sheet has three tabs:
-  Listings  one row per listing. The bot owns columns A to the "Key" column; add your own
-            columns to the right of those (e.g. "Contacted?") and the bot keeps them in line.
-  Changes   one row per new listing, price change, status change, and so on.
+Each kind of record has its own tab (Listings, Health businesses, ...). Two shared tabs log activity:
+  Changes   one row per new record and per change (price, status, owner, ...).
   Runs      one row per source per run, so you can see the bot is alive.
+
+On a record tab the bot owns the columns from A to the "Key" column. Add your own columns to the
+right of those (e.g. "Contacted?") and the bot keeps them lined up with the right row.
 """
 import csv
 import json
 import logging
 import re
 from contextlib import contextmanager
+from dataclasses import dataclass
 from pathlib import Path
 
 log = logging.getLogger(__name__)
 
 
-class SheetError(Exception):
-    """A Google Sheets problem, explained in plain words."""
+@dataclass(frozen=True)
+class Table:
+    """One tab of records: its name, its (field, column header) pairs, and which fields are numbers."""
+
+    tab: str
+    columns: list[tuple[str, str]]
+    numeric: frozenset[str] = frozenset()
+
+    @property
+    def headers(self) -> list[str]:
+        return [header for _, header in self.columns]
 
 
-_NOT_FOUND = (
-    "Google can't find a sheet with that ID. Check SHEET_ID: use the sheet's link, or the part "
-    "between /d/ and /edit (setup step 3)."
-)
-
-
-def sheet_id_from(value: str) -> str:
-    """The sheet ID, given either the ID itself or the sheet's full link."""
-    value = (value or "").strip()
-    match = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]+)", value) or re.fullmatch(r"([A-Za-z0-9_-]{20,})(?:[/?#].*)?", value)
-    if not match:
-        raise SheetError("SHEET_ID doesn't look like a Google Sheet ID or link. Set it to the sheet's link, or the part between /d/ and /edit.")
-    return match.group(1)
-
-# (field, column header). The order here is the column order in the sheet.
+# The order here is the column order in the sheet.
 COLUMNS = [
     ("status", "Status"),
     ("title", "Title"),
@@ -67,8 +64,8 @@ COLUMNS = [
     ("fingerprint", "Fingerprint"),
     ("key", "Key"),
 ]
-HEADERS = [header for _, header in COLUMNS]
-NUMERIC = {"price_aud", "turnover_aud", "profit_aud"}
+LISTINGS = Table("Listings", COLUMNS, frozenset({"price_aud", "turnover_aud", "profit_aud"}))
+HEADERS = LISTINGS.headers
 
 CHANGE_COLUMNS = [
     ("when", "When"),
@@ -94,17 +91,37 @@ RUN_COLUMNS = [
 ]
 
 
+class SheetError(Exception):
+    """A Google Sheets problem, explained in plain words."""
+
+
+_NOT_FOUND = (
+    "Google can't find a sheet with that ID. Check SHEET_ID: use the sheet's link, or the part "
+    "between /d/ and /edit (setup step 3)."
+)
+
+
+def sheet_id_from(value: str) -> str:
+    """The sheet ID, given either the ID itself or the sheet's full link."""
+    value = (value or "").strip()
+    match = re.search(r"/spreadsheets/d/([A-Za-z0-9_-]+)", value) or re.fullmatch(r"([A-Za-z0-9_-]{20,})(?:[/?#].*)?", value)
+    if not match:
+        raise SheetError("SHEET_ID doesn't look like a Google Sheet ID or link. Set it to the sheet's link, or the part between /d/ and /edit.")
+    return match.group(1)
+
+
 def _row(record: dict, columns: list[tuple[str, str]]) -> list:
     return ["" if record.get(field) is None else record[field] for field, _ in columns]
 
 
-def _number(value) -> int | None:
+def _number(value) -> int | float | None:
     if value in (None, ""):
         return None
     try:
-        return int(float(str(value).replace(",", "").replace("$", "")))
+        number = float(str(value).replace(",", "").replace("$", ""))
     except ValueError:
         return None
+    return int(number) if number.is_integer() else number
 
 
 class LocalStore:
@@ -113,21 +130,26 @@ class LocalStore:
     def __init__(self, folder: Path):
         self.folder = folder
         self.folder.mkdir(parents=True, exist_ok=True)
-        self.path = folder / "listings.json"
 
-    def load(self) -> dict[str, dict]:
-        return json.loads(self.path.read_text()) if self.path.exists() else {}
+    def load(self, table: Table) -> dict[str, dict]:
+        path = self._path(table, ".json")
+        return json.loads(path.read_text()) if path.exists() else {}
 
-    def save(self, listings: dict[str, dict], changes: list[dict], runs: list[dict]) -> None:
-        self.path.write_text(json.dumps(listings, indent=1, ensure_ascii=False))
-        ordered = sorted(listings.values(), key=lambda l: (l.get("first_seen", ""), l.get("listing_id", "")), reverse=True)
-        self._write_csv("listings.csv", COLUMNS, ordered, mode="w")
-        self._write_csv("changes.csv", CHANGE_COLUMNS, changes, mode="a")
-        self._write_csv("runs.csv", RUN_COLUMNS, runs, mode="a")
-        log.info("Saved %d listings to %s", len(listings), self.folder)
+    def save(self, table: Table, records: dict[str, dict]) -> None:
+        self._path(table, ".json").write_text(json.dumps(records, indent=1, ensure_ascii=False))
+        ordered = sorted(records.values(), key=lambda r: (r.get("first_seen", ""), r.get("key", "")), reverse=True)
+        self._write_csv(self._path(table, ".csv"), table.columns, ordered, mode="w")
+        log.info("Saved %d rows to %s", len(records), self._path(table, ".csv"))
 
-    def _write_csv(self, name: str, columns, records, mode: str) -> None:
-        path = self.folder / name
+    def log(self, changes: list[dict], runs: list[dict]) -> None:
+        self._write_csv(self.folder / "changes.csv", CHANGE_COLUMNS, changes, mode="a")
+        self._write_csv(self.folder / "runs.csv", RUN_COLUMNS, runs, mode="a")
+
+    def _path(self, table: Table, suffix: str) -> Path:
+        return self.folder / (re.sub(r"[^a-z0-9]+", "-", table.tab.lower()).strip("-") + suffix)
+
+    @staticmethod
+    def _write_csv(path: Path, columns, records, mode: str) -> None:
         new_file = mode == "w" or not path.exists()
         with path.open(mode, newline="") as f:
             writer = csv.writer(f)
@@ -144,7 +166,9 @@ class SheetStore:
 
         self._gspread = gspread
         self.service_account = credentials.get("client_email") or "the service account"
-        self._row_keys: list[str] = []
+        self._worksheets: dict[str, object] = {}
+        # Which record sits on which row of each tab, so rows (and your own columns) stay in place.
+        self._row_keys: dict[str, list[str]] = {}
         with self._explained():
             try:
                 # The back-off client retries when Google says "too many requests" or has a hiccup.
@@ -154,53 +178,68 @@ class SheetStore:
                     "GOOGLE_SERVICE_ACCOUNT_JSON isn't a complete service account key. Set it straight from the "
                     "key file: gh secret set GOOGLE_SERVICE_ACCOUNT_JSON < path/to/key.json"
                 ) from None
-            book = client.open_by_key(sheet_id_from(sheet_id))
-            log.info("Opened Google Sheet %r", book.title)
-            self.listings_ws = self._worksheet(book, "Listings", HEADERS)
-            self.changes_ws = self._worksheet(book, "Changes", [h for _, h in CHANGE_COLUMNS])
-            self.runs_ws = self._worksheet(book, "Runs", [h for _, h in RUN_COLUMNS])
+            self.book = client.open_by_key(sheet_id_from(sheet_id))
+            log.info("Opened Google Sheet %r", self.book.title)
 
-    def load(self) -> dict[str, dict]:
+    def load(self, table: Table) -> dict[str, dict]:
         with self._explained():
-            values = self.listings_ws.get_all_values(
+            values = self._worksheet(table.tab, table.headers).get_all_values(
                 value_render_option=self._gspread.utils.ValueRenderOption.unformatted
             )
-        if values and values[0][: len(HEADERS)] != HEADERS:
-            log.warning("Listings header row differs from the bot's columns; it will be rewritten")
-        listings = {}
-        # Remember which listing sits on which row, so rows (and your own columns) stay in place.
-        self._row_keys = []
+        if values and values[0][: len(table.columns)] != table.headers:
+            log.warning("%s header row differs from the bot's columns; it will be rewritten", table.tab)
+        records = {}
+        row_keys = []
         for cells in values[1:]:
-            cells = list(cells) + [""] * (len(COLUMNS) - len(cells))
-            listing = {field: cells[i] for i, (field, _) in enumerate(COLUMNS)}
-            for field in listing:
-                listing[field] = _number(listing[field]) if field in NUMERIC else str(listing[field])
-            key = listing["key"]
-            self._row_keys.append(key)
-            if key:
-                listings[key] = listing
-        log.info("Loaded %d listings from the sheet", len(listings))
-        return listings
+            cells = list(cells) + [""] * (len(table.columns) - len(cells))
+            record = {field: cells[i] for i, (field, _) in enumerate(table.columns)}
+            for field in record:
+                record[field] = _number(record[field]) if field in table.numeric else str(record[field])
+            row_keys.append(record["key"])
+            if record["key"]:
+                records[record["key"]] = record
+        self._row_keys[table.tab] = row_keys
+        log.info("Loaded %d rows from the %s tab", len(records), table.tab)
+        return records
 
-    def save(self, listings: dict[str, dict], changes: list[dict], runs: list[dict]) -> None:
-        known = set(self._row_keys)
-        new_keys = sorted((k for k in listings if k not in known), key=lambda k: _number(listings[k].get("listing_id")) or 0, reverse=True)
-        ws = self.listings_ws
-        order = new_keys + self._row_keys
-        body = [HEADERS] + [_row(listings[k], COLUMNS) if k in listings else [""] * len(COLUMNS) for k in order]
+    def save(self, table: Table, records: dict[str, dict]) -> None:
+        row_keys = self._row_keys.get(table.tab, [])
+        known = set(row_keys)
+        new_keys = sorted((k for k in records if k not in known), key=lambda k: (records[k].get("first_seen", ""), k), reverse=True)
+        order = new_keys + row_keys
+        body = [table.headers] + [_row(records[k], table.columns) if k in records else [""] * len(table.columns) for k in order]
+        ws = self._worksheet(table.tab, table.headers)
         with self._explained():
             if new_keys:
                 # Insert whole rows at the top so your own columns shift down with the bot's.
                 ws.insert_rows([[""]] * len(new_keys), row=2)
-            if ws.col_count < len(HEADERS):
-                ws.add_cols(len(HEADERS) - ws.col_count)
+            if ws.col_count < len(table.columns):
+                ws.add_cols(len(table.columns) - ws.col_count)
             ws.update(values=body, range_name="A1", value_input_option="RAW")
+        self._row_keys[table.tab] = order
+        log.info("Saved %d rows (%d new) to the %s tab", len(records), len(new_keys), table.tab)
+
+    def log(self, changes: list[dict], runs: list[dict]) -> None:
+        with self._explained():
             if changes:
-                self.changes_ws.append_rows([_row(c, CHANGE_COLUMNS) for c in changes], value_input_option="RAW")
+                ws = self._worksheet("Changes", [h for _, h in CHANGE_COLUMNS])
+                ws.append_rows([_row(c, CHANGE_COLUMNS) for c in changes], value_input_option="RAW")
             if runs:
-                self.runs_ws.append_rows([_row(r, RUN_COLUMNS) for r in runs], value_input_option="RAW")
-        self._row_keys = order
-        log.info("Saved %d listings (%d new rows) and %d changes to the sheet", len(listings), len(new_keys), len(changes))
+                ws = self._worksheet("Runs", [h for _, h in RUN_COLUMNS])
+                ws.append_rows([_row(r, RUN_COLUMNS) for r in runs], value_input_option="RAW")
+
+    def _worksheet(self, title: str, headers: list[str]):
+        if title in self._worksheets:
+            return self._worksheets[title]
+        with self._explained():
+            try:
+                ws = self.book.worksheet(title)
+            except self._gspread.WorksheetNotFound:
+                ws = self.book.add_worksheet(title, rows=100, cols=len(headers))
+                ws.update(values=[headers], range_name="A1", value_input_option="RAW")
+                ws.freeze(rows=1)
+        self._worksheets[title] = ws
+        return ws
 
     @contextmanager
     def _explained(self):
@@ -237,12 +276,3 @@ class SheetStore:
         if error.code == 429:
             return "Google's rate limit was still hit after retrying. The next run will carry on."
         return f"Google Sheets error {error.code}: {message[:300]}"
-
-    def _worksheet(self, book, title: str, headers: list[str]):
-        try:
-            return book.worksheet(title)
-        except self._gspread.WorksheetNotFound:
-            ws = book.add_worksheet(title, rows=100, cols=len(headers))
-            ws.update(values=[headers], range_name="A1", value_input_option="RAW")
-            ws.freeze(rows=1)
-            return ws

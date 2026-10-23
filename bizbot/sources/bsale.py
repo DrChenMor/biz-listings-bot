@@ -5,14 +5,13 @@ or have changed since the last run.
 """
 import hashlib
 import re
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass
 
 from bs4 import BeautifulSoup
 
 from .. import extract
 from ..config import Config
-from ..http import PoliteClient
+from ..http import PoliteClient, parse_xml
 
 NAME = "bsale"
 SITEMAP = "https://bsale.com.au/sitemap-businesses.php"
@@ -34,7 +33,7 @@ class Entry:
 
 
 def list_entries(client: PoliteClient, cfg: Config) -> list[Entry]:
-    root = ET.fromstring(client.get(SITEMAP).content)
+    root = parse_xml(client.get(SITEMAP), "bsale's listing index")
     entries = []
     for node in root.iter(f"{_SITEMAP_NS}url"):
         url = (node.findtext(f"{_SITEMAP_NS}loc") or "").strip()

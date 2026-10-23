@@ -2,12 +2,13 @@
 import logging
 import random
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
 from .config import Config
 from .http import Blocked, PoliteClient
 from .sources import SOURCES
+from .store import LISTINGS
 
 log = logging.getLogger(__name__)
 PERTH = ZoneInfo("Australia/Perth")
@@ -24,10 +25,8 @@ WATCHED = {
 
 def run(cfg: Config, store, limit: int | None = None, jitter: bool = False) -> list[dict]:
     if jitter:
-        wait = random.uniform(*cfg.start_jitter_minutes) * 60
-        log.info("Waiting %.0f seconds before starting", wait)
-        time.sleep(wait)
-    listings = store.load()
+        wait_randomly(cfg)
+    listings = store.load(LISTINGS)
     client = PoliteClient(cfg.user_agent, cfg.delay_seconds)
     changes: list[dict] = []
     runs: list[dict] = []
@@ -36,18 +35,30 @@ def run(cfg: Config, store, limit: int | None = None, jitter: bool = False) -> l
             max_pages = cfg.max_listings_per_run if limit is None else limit
             runs.append(sync_source(SOURCES[name], cfg, client, listings, changes, max_pages))
     finally:
-        store.save(listings, changes, runs)
+        store.save(LISTINGS, listings)
+        store.log(changes, runs)
     return runs
 
 
+def wait_randomly(cfg: Config) -> None:
+    wait = random.uniform(*cfg.start_jitter_minutes) * 60
+    log.info("Waiting %.0f seconds before starting", wait)
+    time.sleep(wait)
+
+
 def sync_source(source, cfg: Config, client: PoliteClient, listings: dict, changes: list, limit: int) -> dict:
-    stamp = _now()
+    stamp = now()
     stats = dict(started=stamp, source=source.NAME, on_site=0, new=0, updated=0, removed=0, fetched=0, backlog=0, errors=0, result="ok")
     try:
         entries = {f"{source.NAME}:{e.listing_id}": e for e in source.list_entries(client, cfg)}
     except Blocked as e:
         log.error("%s refused the listing index: %s", source.NAME, e)
         stats["result"] = f"blocked: {e}"
+        return stats
+    except Exception as e:
+        # Often a temporary "busy" page; the next run tries again.
+        log.error("Couldn't read the %s listing index: %s", source.NAME, e)
+        stats["result"] = f"listing index unavailable: {e}"
         return stats
     stats["on_site"] = len(entries)
     if not entries:
@@ -133,5 +144,16 @@ def _record(changes: list, row: dict, stamp: str, what: str, old, new) -> None:
     )
 
 
-def _now() -> str:
+def now() -> str:
     return datetime.now(PERTH).strftime("%Y-%m-%d %H:%M")
+
+
+def is_due(stamp, days: int) -> bool:
+    """True when a "YYYY-MM-DD HH:MM" Perth time is empty or at least `days` days ago."""
+    if not stamp:
+        return True
+    try:
+        checked = datetime.strptime(str(stamp), "%Y-%m-%d %H:%M").replace(tzinfo=PERTH)
+    except ValueError:
+        return True
+    return datetime.now(PERTH) - checked >= timedelta(days=days)

@@ -1,7 +1,11 @@
 # Business listings bot
 
-Collects WA businesses for sale into a Google Sheet, three times a day, and keeps track of what changes:
-new listings, price changes, "under offer", and listings that disappear (sold or withdrawn).
+Two bots that fill one Google Sheet and keep track of what changes:
+
+- **Listings bot** (`python -m bizbot run`): WA businesses for sale, three times a day. New listings,
+  price changes, "under offer", and listings that disappear (sold or withdrawn).
+- **Health bot** (`python -m bizbot health`): health practices suburb by suburb from healthdirect, once a
+  day, with contacts, location and, once your ABN Lookup key is set, the ABN and owner.
 
 No AI and no paid services. It runs free on GitHub Actions, and Google Sheets is free.
 
@@ -49,6 +53,38 @@ description edit, with the old and new values.
 
 **Runs** tab: one row per run, so you can see the bot is alive and what it did.
 
+## Health businesses
+
+The health bot reads [healthdirect](https://www.healthdirect.gov.au/australian-health-services)'s public
+search pages ("Dentists in Subiaco", "Physiotherapy in Subiaco", ...) for the suburbs in `config.toml`, and
+keeps **one row per practice per address** with every service it offers.
+
+**Health businesses** tab: Status · Business name · Sector · Type (practice, individual practitioner,
+hospital) · Main service · All services · Address · Suburb · Postcode · Phone · Email · Website · ABN
+columns · Practitioners · Billing · Latitude/Longitude · Map link · healthdirect link · dates.
+
+- **Choosing suburbs**: `[health] suburbs` in `config.toml`, written like healthdirect writes them
+  (`subiaco-6008-wa`), or `postcode_ranges = [[6000, 6199]]` for all of Perth metro. Each suburb has about
+  110 service-type pages; a run reads up to 300 pages, so a suburb takes about one run.
+- **Keeping up to date**: each search page is read again every 30 days. New practices appear as "New
+  business" in the Changes tab; one that no page has shown for 60 days becomes "Not seen recently".
+- **Health pages** tab: the bot's progress through healthdirect's pages. Leave it alone.
+
+**ABN matching** switches on by itself once the `ABN_GUID` secret holds your free
+[ABN Lookup key](https://abr.business.gov.au/Tools/WebServices). For each practice it searches ABN Lookup by
+name and fills ABN, registered entity, entity type, owner, ABN active-from date and business names.
+The **ABN match** column says how far to trust it:
+
+| ABN match | Meaning |
+|---|---|
+| High | Same name, and the ABN is registered in the practice's postcode |
+| Medium | Same name in another postcode (often the owner's home or head office), or a very close name in the same postcode |
+| Low | Nothing close enough. ABN columns stay empty; ABN notes names the closest candidate to check by hand |
+
+ABN Lookup shows an owner's name only for sole traders. For companies and trusts the Owner column says an
+ASIC search is needed; for partnerships it shows the partnership's name. ABN records are checked again every
+90 days, and a new ABN or entity for a practice is logged in Changes: often a sign of a new owner.
+
 ## Setup
 
 ### 1. Google service account (lets the bot write to your sheet)
@@ -68,7 +104,9 @@ description edit, with the old and new values.
 2. **Settings → Secrets and variables → Actions → New repository secret**, add:
    - `SHEET_ID`: the sheet ID, or the sheet's whole link
    - `GOOGLE_SERVICE_ACCOUNT_JSON`: paste the whole contents of the `.json` key file
-3. **Actions → Business listings bot → Run workflow** to start the first fill now.
+   - `ABN_GUID` (when it arrives): your ABN Lookup key, for the health bot's owner matching
+3. **Actions → Business listings bot → Run workflow** to start the first fill now. The same goes for
+   **Health businesses bot**.
 
 GitHub Actions minutes: unlimited on public repos. A private repo gets 2,000 free minutes a month; this bot
 uses roughly 600–1,000 after the first fill. Scheduled workflows pause after 60 days without commits.
@@ -78,8 +116,11 @@ GitHub emails you, and one click re-enables them.
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install -r requirements.txt
-.venv/bin/python -m bizbot run --store local --limit 20     # writes to data/ (CSV + JSON)
+.venv/bin/python -m bizbot run --store local --limit 20      # listings -> data/ (CSV + JSON)
+.venv/bin/python -m bizbot health --store local --limit 20   # health practices -> data/
 ```
+
+Add `ABN_GUID=...` in front of the health command to try ABN matching locally.
 
 With the Google Sheet:
 
@@ -93,8 +134,9 @@ Tests: `.venv/bin/pip install pytest && .venv/bin/python -m pytest`
 
 ## Settings
 
-`config.toml`: pages per run, delay range, start jitter, state (`wa`), and which postcodes count as
-Perth metro.
+`config.toml`: pages per run, delay range, start jitter, state (`wa`), which postcodes count as
+Perth metro, the health bot's suburbs and service types, and how often health pages and ABN records are
+checked again.
 
 ## Adding another site
 

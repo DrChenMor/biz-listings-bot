@@ -18,3 +18,24 @@ perth_postcodes = [[6000, 6199]]
 
 [sources.bsale]
 enabled = true
+
+[health]
+# Suburbs to cover, written the way healthdirect writes them: suburb-postcode-state.
+suburbs = ["subiaco-6008-wa"]
+# Also cover every suburb in these postcode ranges, e.g. [[6000, 6199]] for all of Perth metro.
+postcode_ranges = []
+# Service types to search, as in healthdirect's links (e.g. "dentists", "physiotherapy").
+# Leave empty to search every service type healthdirect lists for those suburbs.
+service_types = []
+# Search again for new or closed practices after this many days.
+recheck_days = 30
+# Most healthdirect pages to open in one run; the rest wait for the next run.
+max_pages_per_run = 300
+delay_seconds = [3, 8]
+
+[abn]
+# ABN matching runs only when the ABN_GUID secret (your ABN Lookup key) is set.
+# Check each business's ABN record again after this many days (catches owner changes).
+recheck_days = 90
+max_businesses_per_run = 300
+delay_seconds = [1, 2]

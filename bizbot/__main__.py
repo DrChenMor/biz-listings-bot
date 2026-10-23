@@ -1,4 +1,10 @@
-"""Command line: python -m bizbot run [--store sheet|local] [--limit N] [--jitter]"""
+"""Command line:
+
+  python -m bizbot run      businesses for sale (bsale) -> Listings tab
+  python -m bizbot health   health practices by suburb (healthdirect + ABN) -> Health businesses tab
+
+Both take [--store sheet|local] [--limit N] [--jitter].
+"""
 import argparse
 import json
 import logging
@@ -6,7 +12,7 @@ import os
 import sys
 from pathlib import Path
 
-from . import config
+from . import config, health
 from .run import run
 from .store import LocalStore, SheetError, SheetStore
 
@@ -14,19 +20,22 @@ log = logging.getLogger("bizbot")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(prog="bizbot", description="Collect businesses for sale into a Google Sheet.")
-    commands = parser.add_subparsers(dest="command", required=True)
-    run_cmd = commands.add_parser("run", help="Run the bot once")
-    run_cmd.add_argument(
+    options = argparse.ArgumentParser(add_help=False)
+    options.add_argument(
         "--store",
         choices=["sheet", "local"],
         default="sheet" if os.environ.get("SHEET_ID") else "local",
         help="sheet = Google Sheet (needs SHEET_ID), local = files in data/ (default when SHEET_ID is not set)",
     )
-    run_cmd.add_argument("--limit", type=int, help="Most listing pages to open this run (default: config.toml)")
-    run_cmd.add_argument("--jitter", action="store_true", help="Wait a random time first (for scheduled runs)")
-    run_cmd.add_argument("-v", "--verbose", action="store_true")
+    options.add_argument("--limit", type=int, help="Most pages to open this run (default: config.toml)")
+    options.add_argument("--jitter", action="store_true", help="Wait a random time first (for scheduled runs)")
+    options.add_argument("-v", "--verbose", action="store_true")
+    parser = argparse.ArgumentParser(prog="bizbot", description="Collect businesses into a Google Sheet.")
+    commands = parser.add_subparsers(dest="command", required=True)
+    commands.add_parser("run", parents=[options], help="Businesses for sale (bsale) -> Listings tab")
+    commands.add_parser("health", parents=[options], help="Health practices by suburb, with ABN owners -> Health businesses tab")
     args = parser.parse_args()
+    job = health.run if args.command == "health" else run
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -43,7 +52,7 @@ def main() -> int:
             store = SheetStore(os.environ["SHEET_ID"], _google_credentials())
         else:
             store = LocalStore(config.ROOT / "data")
-        results = run(cfg, store, limit=args.limit, jitter=args.jitter)
+        results = job(cfg, store, limit=args.limit, jitter=args.jitter)
     except SheetError as e:
         log.error("%s", e)
         if os.environ.get("GITHUB_ACTIONS") == "true":
@@ -55,7 +64,11 @@ def main() -> int:
             "%s: %d new, %d updated, %d removed, %d pages opened, %d left for next run, %d errors -> %s",
             r["source"], r["new"], r["updated"], r["removed"], r["fetched"], r["backlog"], r["errors"], r["result"],
         )
-    return 0 if all(r["result"] == "ok" for r in results) else 1
+        # A site having a bad moment is not a failed run: it's in the Runs tab and retried next run.
+        # Only setup problems (sheet, keys) fail the run, so GitHub's failure emails mean "fix something".
+        if r["result"] != "ok" and os.environ.get("GITHUB_ACTIONS") == "true":
+            print(f"::warning title={r['source']}::{r['result']}")
+    return 0
 
 
 def _google_credentials() -> dict:
