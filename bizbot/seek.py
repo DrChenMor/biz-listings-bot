@@ -110,7 +110,7 @@ def run(cfg: Config, store, limit: int | None = None, jitter: bool = False) -> l
 
 def bookmarklet_source() -> str:
     """The bookmark's page-reading function, from seek/SaveToSheet.gs."""
-    match = _BOOKMARKLET.search((ROOT / "seek" / "SaveToSheet.gs").read_text())
+    match = _BOOKMARKLET.search((ROOT / "seek" / "SaveToSheet.gs").read_text(encoding="utf-8"))
     if not match:
         raise RuntimeError("Couldn't find seekBookmarklet in seek/SaveToSheet.gs")
     return match.group(0)

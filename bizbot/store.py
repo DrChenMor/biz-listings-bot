@@ -13,6 +13,7 @@ import logging
 import re
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timedelta
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -138,10 +139,10 @@ class LocalStore:
 
     def load(self, table: Table) -> dict[str, dict]:
         path = self._path(table, ".json")
-        return json.loads(path.read_text()) if path.exists() else {}
+        return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
 
     def save(self, table: Table, records: dict[str, dict]) -> None:
-        self._path(table, ".json").write_text(json.dumps(records, indent=1, ensure_ascii=False))
+        self._path(table, ".json").write_text(json.dumps(records, indent=1, ensure_ascii=False), encoding="utf-8")
         ordered = sorted(records.values(), key=lambda r: (r.get("first_seen", ""), r.get("key", "")), reverse=True)
         self._write_csv(self._path(table, ".csv"), table.columns, ordered, mode="w")
         log.info("Saved %d rows to %s", len(records), self._path(table, ".csv"))
@@ -156,7 +157,7 @@ class LocalStore:
     @staticmethod
     def _write_csv(path: Path, columns, records, mode: str) -> None:
         new_file = mode == "w" or not path.exists()
-        with path.open(mode, newline="") as f:
+        with path.open(mode, newline="", encoding="utf-8") as f:
             writer = csv.writer(f)
             if new_file:
                 writer.writerow([header for _, header in columns])
@@ -241,6 +242,32 @@ class SheetStore:
             if runs:
                 ws = self._worksheet("Runs", [h for _, h in RUN_COLUMNS])
                 ws.append_rows([_row(r, RUN_COLUMNS) for r in runs], value_input_option="RAW")
+
+    @contextmanager
+    def busy(self, computer: str, doing: str, hours: float = 3):
+        """Take this computer's turn to update the sheet. Refuses while another computer's update is running,
+        so two runs never rewrite the same tab at once. A turn older than `hours` counts as left over from a crash."""
+        from .run import PERTH, now  # here, not at the top: run imports this module
+
+        headers = ["Computer", "Doing", "Since"]
+        ws = self._worksheet("Busy", headers)
+        with self._explained():
+            values = ws.get_all_values()
+        holder, what, since = ((values[1] if len(values) > 1 else []) + ["", "", ""])[:3]
+        if holder and holder != computer and since:
+            try:
+                age = datetime.now(PERTH) - datetime.strptime(since, "%Y-%m-%d %H:%M").replace(tzinfo=PERTH)
+            except ValueError:
+                age = timedelta(hours=hours)
+            if age < timedelta(hours=hours):
+                raise SheetError(f"{holder} is updating the sheet ({what}, since {since}). Try again once it's finished.")
+        with self._explained():
+            ws.update(values=[headers, [computer, doing, now()]], range_name="A1", value_input_option="RAW")
+        try:
+            yield
+        finally:
+            with self._explained():
+                ws.update(values=[headers, ["", "", ""]], range_name="A1", value_input_option="RAW")
 
     def _worksheet(self, title: str, headers: list[str]):
         if title in self._worksheets:

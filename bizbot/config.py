@@ -54,7 +54,7 @@ class Config:
 
 
 def load(path: Path = ROOT / "config.toml") -> Config:
-    raw = tomllib.loads(Path(path).read_text())
+    raw = tomllib.loads(Path(path).read_text(encoding="utf-8"))
     bot, filters, seek, health, abn = raw["bot"], raw["filters"], raw["seek"], raw["health"], raw["abn"]
     return Config(
         max_listings_per_run=bot["max_listings_per_run"],

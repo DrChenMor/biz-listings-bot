@@ -118,6 +118,27 @@ GitHub Actions minutes: unlimited on public repos. A private repo gets 2,000 fre
 uses roughly 600–1,000 after the first fill. Scheduled workflows pause after 60 days without commits.
 GitHub emails you, and one click re-enables them.
 
+## Updating SEEK and CRE from a Windows PC
+
+commercialrealestate.com.au and SEEK Business only work from a home computer. On a Windows PC:
+
+**Once (about 10 minutes):**
+
+1. Install Python from <https://www.python.org/downloads/>. On the installer's first screen, tick
+   **Add python.exe to PATH**.
+2. Download the bot: <https://github.com/DrChenMor/biz-listings-bot> → green **Code** button → **Download ZIP**.
+   Right-click the ZIP → **Extract All**, for example onto the Desktop.
+3. Get your Google key file (a `.json`) from Chen.
+4. In the extracted folder, double-click **Set up this PC.bat**. If Windows says "Windows protected your PC", click
+   **More info → Run anyway**. When it asks, drag the key file into the window and press Enter, then paste the
+   sheet's link.
+
+**Whenever you want an update:** double-click **Check SEEK and CRE.bat**. It takes a few minutes; a browser window
+opens for SEEK: let it run.
+
+Two computers never update at once: if one is mid-update, the other says so (the **Busy** tab shows who) and you try
+again later.
+
 ## Run it on your Mac
 
 ```bash

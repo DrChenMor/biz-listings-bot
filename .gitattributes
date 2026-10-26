@@ -1,0 +1,2 @@
+# Windows batch files keep their Windows line endings exactly as written.
+*.bat -text

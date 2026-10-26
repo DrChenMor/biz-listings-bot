@@ -43,8 +43,9 @@ Double-click **Check SEEK and CRE.command** in the project folder. A Chromium wi
 You can watch it, or click into the window and take over at any time. It runs only when you start it. If SEEK
 ever shows a security check, it stops and says so; it never tries to get past one.
 
-First time on a new Mac: `.venv/bin/pip install -r requirements-mac.txt && .venv/bin/playwright install chromium`,
-then copy `.env.example` to `.env` and fill in your sheet ID and key file path.
+First time on a new Mac: `.venv/bin/pip install -r requirements-local.txt && .venv/bin/playwright install chromium`,
+then `.venv/bin/python -m bizbot setup` (it asks for the Google key file and the sheet link). On a Windows PC,
+double-click **Set up this PC.bat** and then **Check SEEK and CRE.bat** (see the main README).
 
 ## Save to sheet bookmark (as you browse)
 

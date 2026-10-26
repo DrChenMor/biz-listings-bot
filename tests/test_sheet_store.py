@@ -111,6 +111,27 @@ def test_dropped_records_are_deleted_with_your_columns_and_the_rest_stay_aligned
     assert [(r[title], r[len(HEADERS)]) for r in rows] == [("Business 4", "note for Business 4"), ("Business 2", "note for Business 2")]
 
 
+def test_two_computers_take_turns():
+    from bizbot.run import now
+
+    store = make_store()
+    store._worksheets["Busy"] = FakeWorksheet([["Computer", "Doing", "Since"]])
+    with store.busy("Chens-MacBook", "seek"):
+        assert store._worksheets["Busy"].grid[1][:2] == ["Chens-MacBook", "seek"]
+        with pytest.raises(SheetError, match="Chens-MacBook is updating the sheet"):
+            with store.busy("SAM-PC", "run"):
+                pass
+    assert store._worksheets["Busy"].grid[1] == ["", "", ""]  # released afterwards
+    with store.busy("SAM-PC", "run"):
+        pass
+
+    # A turn left over from a crash hours ago doesn't block anyone.
+    store._worksheets["Busy"].grid[1] = ["Chens-MacBook", "seek", "2026-01-01 09:00"]
+    with store.busy("SAM-PC", "run"):
+        assert store._worksheets["Busy"].grid[1][0] == "SAM-PC"
+    assert now()  # the stamp format busy() compares against
+
+
 @pytest.mark.parametrize(
     "value",
     [
