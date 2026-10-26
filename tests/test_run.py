@@ -128,6 +128,36 @@ def test_food_businesses_are_skipped_remembered_and_removed_from_the_sheet():
     assert site.opened == []
 
 
+def test_sold_listings_are_skipped_and_a_listing_that_sells_is_logged():
+    site, listings, changes, skipped = FakeSite(), {}, [], {}
+    site.add("1", "t1", price_text="SOLD", status="Sold")
+    site.add("2", "t1", price_text="$90,000")
+    cfg = config.load()
+    sync_source(site, cfg, None, listings, changes, 100, skipped)
+    assert set(listings) == {"fake:2"} and skipped["fake:1"]["reason"] == "Sold"
+
+    # Listing 2 sells later: a line in Changes, then it moves to Skipped.
+    changes.clear()
+    site.add("2", "t2", price_text="SOLD", status="Sold")
+    sync_source(site, cfg, None, listings, changes, 100, skipped)
+    assert "fake:2" not in listings and skipped["fake:2"]["reason"] == "Sold"
+    assert [(c["what"], c["old"], c["new"]) for c in changes] == [("Status", "Active", "Sold (moved to Skipped)")]
+
+
+def test_rows_wrongly_marked_sold_earlier_are_corrected_not_skipped():
+    site, changes, skipped = FakeSite(), [], {}
+    site.add("1", "t1", title="New franchise", price_text="Intro offer, first 10 locations sold")
+    site.add("2", "t1", title="Nails Salon", price_text="SOLD")
+    listings = {
+        "fake:1": {"key": "fake:1", "source": "fake", "title": "New franchise", "price_text": "Intro offer, first 10 locations sold", "status": "Sold", "sitemap_lastmod": "t1"},
+        "fake:2": {"key": "fake:2", "source": "fake", "title": "Nails Salon", "price_text": "SOLD", "status": "Sold", "sitemap_lastmod": "t1"},
+    }
+    sync_source(site, config.load(), None, listings, changes, 100, skipped)
+    assert listings["fake:1"]["status"] == "Active"
+    assert set(skipped) == {"fake:2"}
+    assert site.opened == []  # nothing needed re-opening
+
+
 def test_exclusion_matches_whole_words_only():
     cfg = config.load()
     assert cfg.excluded("Pubs, Bars & Clubs")

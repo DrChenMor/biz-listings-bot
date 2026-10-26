@@ -197,7 +197,7 @@ def _save(cfg: Config, rows: dict, raw: dict, stamp: str, changes: list, stats: 
     record = normalise(raw, stamp)
     if not record["listing_id"]:
         return
-    if cfg.excluded(record["industry"]):
+    if cfg.excluded(record["industry"]) or record["status"] == "Sold":
         stats["skipped"] += 1
         rows.pop(record["key"], None)
         return

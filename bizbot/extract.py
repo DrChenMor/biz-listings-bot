@@ -112,9 +112,15 @@ def status(title: str, price_text: str) -> str:
     text = f"{title} {price_text}".lower()
     if "under offer" in text or "under contract" in text:
         return "Under offer"
-    # Only a price or title that says the business itself is sold ("SOLD", "Sold - Cafe ..."),
-    # not one that mentions selling ("first 10 locations sold", "must be sold").
-    if re.match(r"^\W*sold\b", price_text or "", re.I) or re.match(r"^\W*sold\b", title or "", re.I) or re.search(r"[-|(\[]\s*sold\W*$", title or "", re.I):
+    # Only a price or title that says the business itself is sold ("SOLD", "Sold - Cafe ...", "Legal Practice -
+    # Sold! Another Wanted"), not one that mentions selling ("first 10 locations sold", "must be sold").
+    title = title or ""
+    if (
+        re.match(r"^\W*sold\b", price_text or "", re.I)
+        or re.match(r"^\W*sold\b", title, re.I)
+        or re.search(r"[-–|(\[]\s*sold\b", title, re.I)
+        or re.search(r"\bsold\W+another\s+wanted", f"{title} {price_text}", re.I)
+    ):
         return "Sold"
     return "Active"
 

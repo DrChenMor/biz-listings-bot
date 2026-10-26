@@ -5,6 +5,7 @@ import time
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 
+from . import extract
 from .config import Config
 from .http import Blocked, PoliteClient
 from .sources import SOURCES
@@ -80,11 +81,16 @@ def sync_source(source, cfg: Config, client: PoliteClient, listings: dict, chang
         stats["result"] = "listing index was empty; nothing marked as removed"
         return stats
 
-    # Listings already in the sheet that the exclusions now cover (food businesses) leave it.
-    for key in [k for k, row in listings.items() if row.get("source") == source.NAME and cfg.excluded(row.get("industry"), row.get("category"))]:
-        row = listings.pop(key)
-        skipped[key] = _skip(key, row, stamp, cfg.excluded(row.get("industry"), row.get("category")))
-        stats["skipped"] += 1
+    # Listings already in the sheet that are now left out (food businesses, sold businesses) leave it.
+    for key, row in list(listings.items()):
+        if row.get("source") != source.NAME:
+            continue
+        if row.get("status") == "Sold":
+            # Re-check with the current rule: an earlier one also caught text like "10 locations sold".
+            row["status"] = extract.status(row.get("title", ""), row.get("price_text", ""))
+        if reason := skip_reason(cfg, row):
+            skipped[key] = _skip(key, listings.pop(key), stamp, reason)
+            stats["skipped"] += 1
     # Forget skipped listings that are no longer on the site.
     for key in [k for k, row in skipped.items() if row.get("source") == source.NAME and k not in entries]:
         del skipped[key]
@@ -129,8 +135,10 @@ def sync_source(source, cfg: Config, client: PoliteClient, listings: dict, chang
                 listings[key].update(status="Removed", last_changed=stamp, sitemap_lastmod=entry.lastmod)
                 stats["removed"] += 1
             continue
-        if word := cfg.excluded(data.get("industry"), data.get("category")):
-            skipped[key] = _skip(key, {**data, "url": entry.url}, stamp, word, entry.lastmod)
+        if reason := skip_reason(cfg, data):
+            if key in listings:  # e.g. it just sold: worth a line in Changes before it leaves the tab
+                _record(changes, listings[key], stamp, "Status", listings[key].get("status", ""), f"{reason} (moved to Skipped)")
+            skipped[key] = _skip(key, {**data, "url": entry.url}, stamp, reason, entry.lastmod)
             listings.pop(key, None)
             stats["skipped"] += 1
             continue
@@ -139,15 +147,24 @@ def sync_source(source, cfg: Config, client: PoliteClient, listings: dict, chang
         if done % 25 == 0:
             log.info("%s: %d/%d pages opened", source.NAME, done, len(queue))
     if stats["skipped"]:
-        log.info("%s: skipped %d listings in excluded categories (see the Skipped tab)", source.NAME, stats["skipped"])
+        log.info("%s: skipped %d food or sold listings (see the Skipped tab)", source.NAME, stats["skipped"])
     return stats
 
 
-def _skip(key: str, row: dict, stamp: str, word: str, lastmod: str | None = None) -> dict:
+def skip_reason(cfg: Config, row: dict) -> str:
+    """Why a listing is left out of the sheet ("" if it isn't): a food business, or already sold."""
+    if word := cfg.excluded(row.get("industry"), row.get("category")):
+        return f"Excluded category ({word.lower()}): {row.get('category') or row.get('industry')}"
+    if row.get("status") == "Sold":
+        return "Sold"
+    return ""
+
+
+def _skip(key: str, row: dict, stamp: str, reason: str, lastmod: str | None = None) -> dict:
     return {
         "key": key,
         "title": row.get("title", ""),
-        "reason": f"Excluded category ({word.lower()}): {row.get('category') or row.get('industry')}",
+        "reason": reason,
         "source": key.split(":", 1)[0],
         "url": row.get("url", ""),
         "sitemap_lastmod": row.get("sitemap_lastmod", "") if lastmod is None else lastmod,

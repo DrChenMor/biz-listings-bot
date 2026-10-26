@@ -62,6 +62,8 @@ def test_established_price_basis_reasons_and_status():
     assert extract.status("Hair Salon - SOLD", "$95,000") == "Sold"
     assert extract.status("New franchise", "Intro Offer: $250k + GST, first 10 locations sold") == "Active"
     assert extract.status("Business must be sold this month", "$50,000") == "Active"
+    assert extract.status("Legal Practice - Sold! Another Wanted", "$400,000") == "Sold"
+    assert extract.status("Commercial Lawyers & Conveyancers Sold Another Wanted", "$300,000") == "Sold"
 
 
 def test_perth_metro_and_notes():
