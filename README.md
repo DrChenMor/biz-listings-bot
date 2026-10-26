@@ -70,8 +70,8 @@ hospital) · Main service · All services · Address · Suburb · Postcode · Ph
 columns · Practitioners · Billing · Latitude/Longitude · Map link · healthdirect link · dates.
 
 - **Choosing suburbs**: `[health] suburbs` in `config.toml`, written like healthdirect writes them
-  (`subiaco-6008-wa`), or `postcode_ranges = [[6000, 6199]]` for all of Perth metro. Each suburb has about
-  110 service-type pages; a run reads up to 300 pages, so a suburb takes about one run.
+  (`subiaco-6008-wa`), or `postcode_ranges`, set to `[[6000, 6164]]` (Butler to Fremantle). Suburbs have from 1 to
+  110 service-type pages (18 on average); a run reads up to 900 pages, so several suburbs a day.
 - **Keeping up to date**: each search page is read again every 30 days. New practices appear as "New
   business" in the Changes tab; one that no page has shown for 60 days becomes "Not seen recently".
 - **Health pages** tab: the bot's progress through healthdirect's pages. Leave it alone.

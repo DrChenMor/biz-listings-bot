@@ -49,7 +49,7 @@ delay_seconds = [5, 12]
 # Suburbs to cover, written the way healthdirect writes them: suburb-postcode-state.
 suburbs = ["subiaco-6008-wa"]
 # Also cover every suburb in these postcode ranges. 6000-6164 is Perth from Butler (6036) to Fremantle (6160):
-# 251 suburbs, about 4,400 healthdirect pages plus practice pages, covered in postcode order: about two months of daily runs.
+# 251 suburbs, about 4,400 healthdirect pages plus practice pages, covered in postcode order: about three weeks of daily runs.
 postcode_ranges = [[6000, 6164]]
 # Service types to search, as in healthdirect's links (e.g. "dentists", "physiotherapy").
 # Leave empty to search every service type healthdirect lists for those suburbs.
@@ -57,7 +57,7 @@ service_types = []
 # Search again for new or closed practices after this many days.
 recheck_days = 30
 # Most healthdirect pages to open in one run; the rest wait for the next run.
-max_pages_per_run = 300
+max_pages_per_run = 900
 delay_seconds = [3, 8]
 
 [abn]
