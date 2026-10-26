@@ -57,6 +57,11 @@ def test_established_price_basis_reasons_and_status():
     assert extract.sale_reasons("Owner is retiring after 20 years. Motivated seller.") == "Retirement, Motivated seller"
     assert extract.status("-- UNDER OFFER -- Cannington restaurant", "$50,000") == "Under offer"
     assert extract.status("Busy cafe", "$80,000") == "Active"
+    assert extract.status("Nails Salon - Cheap", "SOLD") == "Sold"
+    assert extract.status("Sold", "$95,000") == "Sold"
+    assert extract.status("Hair Salon - SOLD", "$95,000") == "Sold"
+    assert extract.status("New franchise", "Intro Offer: $250k + GST, first 10 locations sold") == "Active"
+    assert extract.status("Business must be sold this month", "$50,000") == "Active"
 
 
 def test_perth_metro_and_notes():
