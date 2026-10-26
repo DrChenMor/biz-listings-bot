@@ -142,9 +142,10 @@ def sync(cfg: Config, client: PoliteClient, businesses: dict, pages: dict, chang
         pages.setdefault(page["key"], {**page, "last_checked": "", "results": None})
 
     target_keys = {t["key"] for t in targets}
+    # Oldest first; pages never read go suburb by suburb in postcode order, so each run finishes whole suburbs.
     due = sorted(
         (p for p in pages.values() if p["key"] in target_keys and is_due(p.get("last_checked"), cfg.health.recheck_days)),
-        key=lambda p: p.get("last_checked") or "",
+        key=lambda p: (p.get("last_checked") or "", _page_postcode(p), p.get("suburb", ""), p.get("service", "")),
     )
     log.info("healthdirect: %d search pages for your suburbs, %d due now", len(targets), len(due))
     opened = finished = 0
@@ -408,6 +409,11 @@ def _record(changes: list, row: dict, stamp: str, what: str, old, new) -> None:
 
 def _items(text) -> set[str]:
     return {item for item in (text or "").split("; ") if item}
+
+
+def _page_postcode(page: dict) -> int:
+    match = re.search(r"-(\d{4})(?:-[a-z]+)?$", page.get("suburb", ""))
+    return int(match.group(1)) if match else 9999
 
 
 def _slug(text: str) -> str:

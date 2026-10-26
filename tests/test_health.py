@@ -93,6 +93,7 @@ def test_individual_practitioners_and_sectors():
 
 def test_search_page_opens_only_the_practice_pages_it_needs():
     cfg = config.load()
+    cfg.health.suburbs, cfg.health.postcode_ranges = ["subiaco-6008-wa"], []
     search_url = "https://www.healthdirect.gov.au/australian-health-services/search/subiaco-6008-wa/dentists/310144008"
     known_url = "https://www.healthdirect.gov.au/australian-health-services/healthcare-service/subiaco-6008-wa/kings-dental/dentists/s3"
     unknown_url = "https://www.healthdirect.gov.au/australian-health-services/healthcare-service/subiaco-6008-wa/rokeby-dental/dentists/s4"
@@ -122,8 +123,21 @@ def test_page_left_unfinished_when_the_budget_runs_out():
     assert "last_checked" not in page
 
 
+def test_new_suburbs_are_read_in_postcode_order(monkeypatch):
+    cfg = config.load()
+    targets = [{"key": f"https://x/{s}/{svc}", "suburb": s, "service": svc} for s, svc in
+               [("fremantle-6160-wa", "dentists"), ("butler-6036-wa", "dentists"), ("subiaco-6008-wa", "dentists"), ("butler-6036-wa", "physiotherapy")]]
+    monkeypatch.setattr(health, "search_pages", lambda client, cfg: targets)
+    read = []
+    monkeypatch.setattr(health, "_read_search_page", lambda cfg, client, page, *rest: (read.append(page["suburb"] + "/" + page["service"]), (1, True))[1])
+    pages = {"https://x/subiaco-6008-wa/dentists": {**targets[2], "last_checked": health.now(), "results": 5}}
+    health.sync(cfg, None, {}, pages, [], limit=10)
+    assert read == ["butler-6036-wa/dentists", "butler-6036-wa/physiotherapy", "fremantle-6160-wa/dentists"]  # Subiaco is fresh
+
+
 def test_target_suburbs_and_postcode_ranges():
     cfg = config.load()
+    cfg.health.suburbs, cfg.health.postcode_ranges = ["subiaco-6008-wa"], []
     assert health._is_target(cfg, "subiaco-6008-wa", "6008")
     assert health._is_target(cfg, "subiaco", "6008")
     assert not health._is_target(cfg, "nedlands", "6009")
