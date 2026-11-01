@@ -1,7 +1,9 @@
 import json
+from types import SimpleNamespace
 
 import gspread
 import pytest
+import requests
 
 from bizbot.store import HEADERS, LISTINGS, SheetError, SheetStore, sheet_id_from
 
@@ -136,6 +138,24 @@ def test_sorting_the_tab_during_a_run_keeps_your_columns_with_their_listing():
     assert [r[title] for r in rows] == ["Business 4", "Business 1", "Business 2", "Business 3"]
     assert [r[len(HEADERS)] for r in rows[1:]] == ["note for Business 1", "note for Business 2", "note for Business 3"]
     assert rows[2][HEADERS.index("Price (AUD)")] == 90_000
+
+
+def test_a_connection_that_died_during_a_long_crawl_does_not_lose_the_run(monkeypatch):
+    store = make_store()
+    records = store.load(LISTINGS)
+    ws = store._worksheets["Listings"]
+    real_read, failures, reconnects = ws.col_values, [requests.exceptions.ReadTimeout()], []
+    store.book = SimpleNamespace(client=SimpleNamespace(session=SimpleNamespace(close=lambda: reconnects.append(1))))
+
+    def flaky_read(col):
+        if failures:
+            raise failures.pop()
+        return real_read(col)
+
+    monkeypatch.setattr(ws, "col_values", flaky_read)
+    records["bsale:1"] = listing(1)
+    store.save(LISTINGS, records)
+    assert reconnects == [1] and ws.grid[1][HEADERS.index("Title")] == "Business 1"
 
 
 def test_two_computers_take_turns():

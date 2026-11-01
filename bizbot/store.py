@@ -182,6 +182,7 @@ class SheetStore:
                     "GOOGLE_SERVICE_ACCOUNT_JSON isn't a complete service account key. Set it straight from the "
                     "key file: gh secret set GOOGLE_SERVICE_ACCOUNT_JSON < path/to/key.json"
                 ) from None
+            client.set_timeout(180)  # a dead connection fails in minutes instead of hanging
             self.book = client.open_by_key(sheet_id_from(sheet_id))
             log.info("Opened Google Sheet %r", self.book.title)
 
@@ -208,7 +209,8 @@ class SheetStore:
         with self._explained():
             # Which record sits on which row, read fresh: someone may have sorted the tab during the run,
             # and each row must stay with your own columns on the right of it.
-            row_keys = ws.col_values([field for field, _ in table.columns].index("key") + 1)[1:]
+            key_column = [field for field, _ in table.columns].index("key") + 1
+            row_keys = self._read_after_idle(lambda: ws.col_values(key_column))[1:]
             # Rows whose record was dropped (e.g. a food business) are deleted whole, with your columns.
             gone = [i for i, k in enumerate(row_keys) if k and k not in records]
             row_keys = [k for k in row_keys if not k or k in records]
@@ -229,6 +231,22 @@ class SheetStore:
                 ws.add_cols(len(table.columns) - ws.col_count)
             ws.update(values=body, range_name="A1", value_input_option="RAW")
         log.info("Saved %d rows (%d new, %d removed) to the %s tab", len(records), len(new_keys), len(gone), table.tab)
+
+    def _read_after_idle(self, read):
+        """The first read after a long crawl. The connection to Google can die silently while idle, so try again on a new one."""
+        import requests
+
+        for attempt in range(1, 4):
+            try:
+                return read()
+            except requests.exceptions.RequestException as e:
+                if attempt == 3:
+                    raise
+                log.warning("Google didn't answer (%s), trying again on a new connection", type(e).__name__)
+                self._reconnect()
+
+    def _reconnect(self) -> None:
+        self.book.client.session.close()
 
     def apply(self, change) -> None:
         """Run change(spreadsheet), with Google's errors explained."""

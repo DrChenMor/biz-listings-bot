@@ -7,6 +7,7 @@
   python -m bizbot setup    connect this computer to the Google Sheet (asks for the key file and sheet link)
   python -m bizbot tidy-sheet   colours, filters and the two search tabs in the Google Sheet (safe to run again)
   python -m bizbot reread   apply improved reading rules to the listings already in the sheet (opens no websites)
+  python -m bizbot sync-db  copy the sheet's businesses into the Deal desk app's database (the sheet is only read)
 
 Most take [--store sheet|local] [--limit N] [--jitter]. For seek, --limit is result pages per search.
 Settings for this computer (SHEET_ID, GOOGLE_SERVICE_ACCOUNT_FILE, ...) can live in a .env file in the project folder.
@@ -21,7 +22,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import config, health, seek, seek_alerts, sheet_view
+from . import config, db_sync, health, seek, seek_alerts, sheet_view
 from .run import reread, run
 from .sources import SOURCES
 from .store import LocalStore, SheetError, SheetStore, sheet_id_from
@@ -52,11 +53,14 @@ def main() -> int:
     commands.add_parser("setup", help="Connect this computer to the Google Sheet")
     commands.add_parser("tidy-sheet", help="Colours, filters and the two search tabs in the Google Sheet")
     commands.add_parser("reread", parents=[options], help="Apply improved reading rules to the listings already in the sheet")
+    commands.add_parser("sync-db", help="Copy the sheet's businesses into the Deal desk app's database")
     args = parser.parse_args()
     if args.command == "setup":
         return setup()
     if args.command == "tidy-sheet":
         return tidy_sheet()
+    if args.command == "sync-db":
+        return sync_db()
     job = {"run": run, "health": health.run, "seek": seek.run, "seek-alerts": seek_alerts.run, "reread": reread}[args.command]
 
     logging.basicConfig(
@@ -145,6 +149,20 @@ def tidy_sheet() -> int:
         print(e)
         return 1
     print("Done: the sheet is tidied.")
+    return 0
+
+
+def sync_db() -> int:
+    """Copy the Google Sheet into the Deal desk app's database."""
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
+    try:
+        if not os.environ.get("SHEET_ID"):
+            raise SheetError("SHEET_ID is not set. Run setup first.")
+        store = SheetStore(os.environ["SHEET_ID"], _google_credentials())
+        print(f"Sent {db_sync.sync(config.load(), store)} businesses to the database.")
+    except SheetError as e:
+        print(e)
+        return 1
     return 0
 
 
