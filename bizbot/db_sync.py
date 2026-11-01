@@ -22,6 +22,7 @@ log = logging.getLogger(__name__)
 BATCH = 500
 SITE_NAMES = {
     "bsale": "bsale", "business2sell": "business2sell", "anybusiness": "AnyBusiness", "businessforsale": "businessforsale.com.au",
+    "noagentbusiness": "No Agent Business",
     "commercialrealestate": "commercialrealestate.com.au",
 }
 

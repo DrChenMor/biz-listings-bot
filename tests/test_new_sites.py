@@ -5,7 +5,7 @@ import pytest
 from bizbot import config
 from bizbot.http import Unavailable
 from bizbot.run import _newest_first
-from bizbot.sources import anybusiness, business2sell, businessforsale
+from bizbot.sources import anybusiness, business2sell, businessforsale, noagentbusiness
 
 
 class FakeClient:
@@ -142,3 +142,45 @@ def test_businessforsale_broker_ad_and_a_suburb_written_without_a_comma():
     <p>Asking price</p><p>$30,000</p><p>Full description, as written by the broker</p><p>Love dogs?</p><p>03 · LOCATION</p><p>Location</p><p>Nedlands WA</p>"""
     row = businessforsale.parse_listing(html, config.load())
     assert (row["suburb"], row["region"], row["broker"], row["description"]) == ("Nedlands", "Nedlands", "", "Love dogs?")
+
+
+NAB = "https://www.noagentbusiness.com.au"
+
+
+def nab_page(heading, lines, name="Pilates Studio", description="Phone enquiries - please quote property ID 41433. Call 1300 594 794. Est. 2015."):
+    body = "".join(f"<p>{line}</p>" for line in lines)
+    record = '{"@type":"RealEstateListing","name":"%s","description":"%s"}' % (name, description)
+    return f'<script type="application/ld+json">{record}</script><h1>{heading}</h1>{body}'
+
+
+def test_no_agent_business_reads_the_sitemap_and_leaves_food_out_from_the_link():
+    sitemap = f"""<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+    <url><loc>{NAB}/business-retail-wa-denmark-9638/</loc><lastmod>2019-06-07T02:29:34+00:00</lastmod></url>
+    <url><loc>{NAB}/business-food-_-hospitality-wa-perth-10000/</loc><lastmod>2026-02-14T20:08:16+00:00</lastmod></url>
+    <url><loc>{NAB}/business-accommodation-_-tourism-wa-dunsborough-10209/</loc><lastmod>2020-10-29T03:22:31+00:00</lastmod></url>
+    <url><loc>{NAB}/about-us/</loc></url></urlset>"""
+    client = SimpleNamespace(get=lambda url, **_: SimpleNamespace(status_code=200, content=sitemap.encode(), text=sitemap))
+    entries = noagentbusiness.list_entries(client, config.load())
+    assert [(e.listing_id, e.lastmod[:4]) for e in entries] == [("9638", "2019"), ("10209", "2020")]
+
+
+def test_no_agent_business_ad_is_a_private_seller():
+    html = nab_page("Pilates Business For Sale By Owner Applecross, Western Australia (ID 41433)", ["Gallery", "$179,000", "Leisure / Entertainment For Sale:", "Applecross 6153 WA", "Stunning studio"])
+    row = noagentbusiness.parse_listing(html, config.load())
+    assert (row["title"], row["status"], row["broker"]) == ("Pilates Studio", "Active", "Private Seller")
+    assert (row["category"], row["suburb"], row["postcode"], row["perth_metro"]) == ("Leisure / Entertainment", "Applecross", "6153", "Yes")
+    assert (row["price_aud"], row["broker_phone"], row["established"]) == (179_000, "1300 594 794", "2015")
+
+
+def test_no_agent_business_old_sold_ads_count_as_sold():
+    html = nab_page("Retail Business Sold By Owner Denmark, Western Australia (ID 9638)", ["$250,000", "Retail Sold:", "Denmark 6333 WA"])
+    row = noagentbusiness.parse_listing(html, config.load())
+    assert (row["status"], row["category"]) == ("Sold", "Retail")
+
+
+def test_no_agent_business_takes_the_place_from_the_link_when_the_page_hides_it():
+    page = nab_page("Kayak Business For Sale By Owner (ID 30341)", ["Gallery"], name="Kayak Retailer")
+    client = SimpleNamespace(get=lambda url, **_: SimpleNamespace(status_code=200, text=page, raise_for_status=lambda: None))
+    entry = noagentbusiness.Entry("30341", f"{NAB}/business-retail-wa-perth-30341/", "2026-10-28")
+    row = noagentbusiness.fetch_listing(client, entry, config.load())
+    assert (row["suburb"], row["region"]) == ("Perth", "Perth")

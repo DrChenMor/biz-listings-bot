@@ -37,9 +37,9 @@ jobs:
         run: pip install -r requirements.txt
 
       # commercialrealestate.com.au turns away cloud servers, so it runs from a home computer
-      # ("Check SEEK and CRE"). Here: the four sites that write to the Listings tab.
+      # ("Check SEEK and CRE"). Here: the five sites that write to the Listings tab.
       - name: Run the bot
         run: >-
-          python -m bizbot run --store sheet --source bsale --source business2sell --source anybusiness --source businessforsale
+          python -m bizbot run --store sheet --source bsale --source business2sell --source anybusiness --source businessforsale --source noagentbusiness
           ${{ github.event_name == 'schedule' && '--jitter' || '' }}
           ${{ github.event.inputs.limit && format('--limit {0}', github.event.inputs.limit) || '' }}

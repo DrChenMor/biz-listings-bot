@@ -37,6 +37,9 @@ enabled = true
 [sources.businessforsale]
 enabled = true
 
+[sources.noagentbusiness]
+enabled = true
+
 [sources.commercialrealestate]
 enabled = true
 
