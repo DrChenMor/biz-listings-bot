@@ -28,6 +28,15 @@ exclude_categories = [
 [sources.bsale]
 enabled = true
 
+[sources.business2sell]
+enabled = true
+
+[sources.anybusiness]
+enabled = true
+
+[sources.businessforsale]
+enabled = true
+
 [sources.commercialrealestate]
 enabled = true
 

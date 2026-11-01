@@ -14,9 +14,15 @@ No AI and no paid services. It runs free on GitHub Actions, and Google Sheets is
 | Site | Status | How |
 |---|---|---|
 | [bsale.com.au](https://bsale.com.au) | ✅ Working | Public sitemap + listing pages. About 1,900 WA listings. |
+| [business2sell.com.au](https://www.business2sell.com.au/businesses/wa) | ✅ On GitHub | WA results pages + listing pages, into the **Listings** tab. About 416 WA listings. Phone numbers sit behind a button on the site, so only ones written in the ad are kept. |
+| [anybusiness.com.au](https://www.anybusiness.com.au/business-for-sale/wa) | ✅ On GitHub | WA results pages + listing pages, into the **Listings** tab. About 909 WA results, with the agent's phone. |
+| [businessforsale.com.au](https://www.businessforsale.com.au/for-sale/wa/) | ✅ On GitHub | WA results pages + listing pages, into the **Listings** tab. About 910 WA listings. No phone numbers: sellers use the site's enquiry form. Ads marked OWNER DIRECT are shown as Private Seller. Revenue and profit are bands, and the number columns hold the low end. |
 | SEEK Business | ✅ Alert emails + your Mac | Turns away windowless bots, so it isn't read on GitHub. A bot on GitHub reads SEEK's **alert emails** from a Gmail inbox every day; **Check SEEK and CRE.command** on your Mac adds full details. See [seek/README.md](seek/README.md). |
 | BusinessesForSale.com | ⛔ Not included | Cloudflare blocks automated requests outright. |
+| Gumtree | ⛔ Not included | Refuses plain requests and a Chromium window driven by a bot, so the bot stops there. Its saved-search emails are the way in, once the alerts Gmail exists. |
 | [commercialrealestate.com.au](https://www.commercialrealestate.com.au/business-for-sale/wa/) | ✅ From your Mac | WA results pages + listing pages, about 500 non-food WA listings, into the **CRE listings** tab. Its robots.txt allows bots, but it turns away cloud servers, so it runs from **Check SEEK and CRE.command** on your Mac. |
+
+The same business is often on several of these sites, so a business can show more than once until matching across sites is added.
 
 **No food businesses.** Every bot skips businesses whose industry or category matches the words in
 `exclude_categories` in `config.toml` (cafés, restaurants, takeaways, bakeries, pubs, liquor stores and more).

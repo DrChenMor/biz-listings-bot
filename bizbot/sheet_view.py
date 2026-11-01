@@ -159,7 +159,10 @@ def _write_lists(ws) -> None:
 
 
 def _listing_rows(table: Table, site: str, where: str, perth: str, kind: str, summary: str, broker: str, phone: str) -> str:
-    """One tab's listings as the columns of Find data, leaving out empty rows and the header row."""
+    """One tab's listings as the columns of Find data, leaving out empty rows and the header row.
+
+    `site` is an expression for the site's name. A tab with no listings yet gives one empty row, not an error.
+    """
     title, asking, price = _col(table, "Title"), _col(table, "Asking price"), _col(table, "Price (AUD)")
     turnover, profit = _col(table, "Turnover (AUD/yr)"), _col(table, "Profit (AUD/yr)")
     columns = [
@@ -171,12 +174,13 @@ def _listing_rows(table: Table, site: str, where: str, perth: str, kind: str, su
         f'IF(ISNUMBER({turnover})*ISNUMBER({profit})*({profit}>={turnover}),"",{profit})',
         where, perth, f'REGEXREPLACE(LOWER({kind}),"{TYPE_NOISE}","")',
         _col(table, summary), _col(table, broker), _col(table, phone), _col(table, "URL"),
-        f'IFERROR(DATEVALUE(LEFT({_col(table, "First seen")},10)))', f'IF({title}<>"","{site}","")',
+        f'IFERROR(DATEVALUE(LEFT({_col(table, "First seen")},10)))', f'IF({title}<>"",{site},"")',
     ]
-    return "FILTER({" + ",".join(columns) + f'}},{title}<>"",{title}<>"Title")'
+    empty = ",".join(['""'] * len(columns))
+    return "IFERROR(FILTER({" + ",".join(columns) + f'}},{title}<>"",{title}<>"Title"),{{{empty}}})'
 
 
-def _broker_site_rows(table: Table, site: str) -> str:
+def _ad_site_rows(table: Table, site: str) -> str:
     suburb, region, metro = _col(table, "Suburb"), _col(table, "Region"), _col(table, "Perth metro")
     return _listing_rows(
         table, site,
@@ -192,13 +196,15 @@ def _find_data_formula() -> str:
     """Columns: A status, B title, C asking price, D price, E turnover, F profit, G where, H Perth?, I type,
     J summary, K broker, L phone, M link, N date added, O site."""
     seek = _listing_rows(
-        SEEK, "SEEK",
+        SEEK, '"SEEK"',
         where=_col(SEEK, "Location"),
         perth=f'{_col(SEEK, "Title")}<>""',  # the SEEK search only covers 50 km around Perth
         kind=f'{_col(SEEK, "Industry")}&" "&{_col(SEEK, "Type")}',
         summary="Summary", broker="Advertiser", phone="Phones in listing",
     )
-    return f'=ARRAYFORMULA({{{_broker_site_rows(LISTINGS, "bsale")};{_broker_site_rows(CRE, "commercialrealestate")};{seek}}})'
+    # The Listings tab holds several sites, and its Source column says which.
+    parts = [_ad_site_rows(LISTINGS, _col(LISTINGS, "Source")), _ad_site_rows(CRE, '"commercialrealestate"'), seek]
+    return f'=ARRAYFORMULA({{{";".join(parts)}}})'
 
 
 def _search_text_formula() -> str:

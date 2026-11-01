@@ -34,7 +34,7 @@ def run(cfg: Config, store, limit: int | None = None, jitter: bool = False) -> l
         table = getattr(SOURCES[name], "TABLE", LISTINGS)
         if table.tab not in tables:
             tables[table.tab] = (table, store.load(table))
-    # The Skipped tab goes with the Listings tab.
+    # The Skipped tab goes with the Listings tab, for the sites that write there.
     skipped = store.load(SKIPPED) if LISTINGS.tab in tables else None
     client = PoliteClient(cfg.user_agent, cfg.delay_seconds)
     changes: list[dict] = []
@@ -137,7 +137,7 @@ def sync_source(source, cfg: Config, client: PoliteClient, listings: dict, chang
 
     # A skipped listing is opened again only if the site has updated it since.
     was_skipped = {k for k, e in entries.items() if skipped.get(k, {}).get("sitemap_lastmod") == e.lastmod}
-    new = sorted((e for k, e in entries.items() if k not in listings and k not in was_skipped), key=lambda e: int(e.listing_id), reverse=True)
+    new = sorted((e for k, e in entries.items() if k not in listings and k not in was_skipped), key=_newest_first, reverse=True)
     updated = [e for k, e in entries.items() if k in listings and listings[k].get("sitemap_lastmod") != e.lastmod]
     queue = (new + updated)[:limit]
     stats["backlog"] = len(new) + len(updated) - len(queue)
@@ -178,6 +178,12 @@ def sync_source(source, cfg: Config, client: PoliteClient, listings: dict, chang
     if stats["skipped"]:
         log.info("%s: skipped %d food or sold listings (see the Skipped tab)", source.NAME, stats["skipped"])
     return stats
+
+
+def _newest_first(entry) -> tuple:
+    """Higher listing numbers are newer. A site whose IDs aren't numbers just sorts by ID."""
+    number = entry.listing_id.isdigit()
+    return (number, int(entry.listing_id) if number else 0, entry.listing_id)
 
 
 def skip_reason(cfg: Config, row: dict) -> str:
