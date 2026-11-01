@@ -106,7 +106,7 @@ def parse_listing(listing: dict, card: dict, cfg: Config) -> dict:
         "key_features": "Franchise" if listing.get("isFranchise") else "",
         "broker": " / ".join(filter(None, [", ".join(names), agency.get("agencyName", "")])),
         "broker_phone": "; ".join(phones[:3]),
-        "description": description[:5000],
+        "description": description[:extract.DESCRIPTION_LIMIT],
         "fingerprint": hashlib.sha1(description.encode()).hexdigest()[:12],
     }
     row["notes"] = extract.build_notes(row)

@@ -2,9 +2,10 @@ from dataclasses import dataclass
 
 import pytest
 
-from bizbot import config
+from bizbot import config, extract
 from bizbot.http import Blocked
-from bizbot.run import sync_source
+from bizbot.run import reread, sync_source
+from bizbot.store import LISTINGS, LocalStore
 
 
 @dataclass(frozen=True)
@@ -161,6 +162,25 @@ def test_rows_wrongly_marked_sold_earlier_are_corrected_not_skipped():
     assert listings["fake:4"]["status"] == "Under offer"
     assert set(skipped) == {"fake:2", "fake:3"}
     assert site.opened == []  # nothing needed re-opening
+
+
+def test_reread_corrects_rows_from_their_text_and_leaves_cut_off_ones_for_the_next_run(tmp_path):
+    store = LocalStore(tmp_path)
+    store.save(LISTINGS, {
+        "bsale:1": {"key": "bsale:1", "source": "bsale", "title": "Carpet Shop", "key_features": "Turnover: $1.3 million\nNet Profit: $120,000",
+                    "description": "Great shop.", "category": "Retail", "price_text": "$125,000", "price_aud": 125_000,
+                    "turnover_aud": 1_300_000, "profit_aud": 1_300_000, "notes": "wrong", "sitemap_lastmod": "t1"},
+        "bsale:2": {"key": "bsale:2", "source": "bsale", "title": "Salon", "key_features": "Turnover: Not disclosed", "description": "x" * extract.DESCRIPTION_LIMIT,
+                    "turnover_aud": 220_074, "profit_aud": 43_147, "notes": "keep", "sitemap_lastmod": "t1"},
+        "bsale:3": {"key": "bsale:3", "source": "bsale", "title": "Bakery", "key_features": "Turnover: $500,000", "description": "Fine.",
+                    "turnover_aud": 500_000, "profit_aud": None, "notes": "keep", "sitemap_lastmod": "t1"},
+    })
+    reread(config.load(), store)
+    rows = store.load(LISTINGS)
+    assert (rows["bsale:1"]["turnover_aud"], rows["bsale:1"]["profit_aud"]) == (1_300_000, 120_000)
+    assert "~$120,000/yr" in rows["bsale:1"]["notes"] and rows["bsale:1"]["sitemap_lastmod"] == "t1"
+    assert (rows["bsale:2"]["turnover_aud"], rows["bsale:2"]["profit_aud"], rows["bsale:2"]["sitemap_lastmod"]) == (220_074, 43_147, "")
+    assert (rows["bsale:3"]["notes"], rows["bsale:3"]["sitemap_lastmod"]) == ("keep", "t1")
 
 
 def test_exclusion_matches_whole_words_only():

@@ -52,8 +52,8 @@ to confirm first. To set all this up, or after changing it in `bizbot/sheet_view
 ```
 
 It only changes how tabs look, never the data, and keeps what's picked in the yellow boxes. The hidden **Find data**
-and **Lists** tabs feed the search tabs. Find a business leaves out any profit as high as the turnover (the reader
-took a sales figure for it) and SEEK's $1 "price on application".
+and **Lists** tabs feed the search tabs. Find a business leaves out any profit as high as the turnover (a sign that
+one of them was misread) and SEEK's $1 "price on application".
 
 **Listings** tab, one row per listing:
 Status · Title · Notes · Industry · Category · Suburb · Postcode · Region · Perth metro · Asking price ·
@@ -63,8 +63,10 @@ Broker / seller · Broker phone · URL · … · Key features · Description
 - **Notes** is a one-line summary built by simple rules, e.g.
   *"Hair Salon in Morley, Perth Region WA. Asking $95,000. Turnover ~$281,700/yr. Est. 2009. Selling because: Retirement."*
   When a listing states profit, the note also gives the price-to-profit multiple.
-- Turnover and profit are read from the listing text by patterns. They are right most of the time, but
-  check the Description before relying on a number.
+- Turnover and profit are read from the listing text by patterns, starting with bsale's own "Turnover:" and
+  "Net Profit:" lines. They are right most of the time, but check the Description before relying on a number.
+  After improving the patterns, `python -m bizbot reread` applies them to the rows already in the sheet without
+  opening any website. A row whose description was cut off at 5,000 characters is opened again by the next run instead.
 - **Status**: Active, Under offer, or Removed (gone from the site). Sold businesses leave the tab for **Skipped**.
   When a title says "Under Offer" and bsale's price box says "SOLD", the listing stays as Under offer: the title is
   the seller's own word. A title that says "Sold" wins over a price box saying "Under Contract / Offer".

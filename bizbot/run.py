@@ -54,6 +54,34 @@ def run(cfg: Config, store, limit: int | None = None, jitter: bool = False) -> l
     return runs
 
 
+def reread(cfg: Config, store, limit: int | None = None, jitter: bool = False) -> list[dict]:
+    """Apply the current reading rules to the listings already in the sheet, opening no websites.
+
+    For when the rules improve: turnover, profit and the Notes line are read again from the text each row keeps.
+    A description cut off at the limit may have lost its figures, so that page is opened again by the next run.
+    """
+    tables = {table.tab: table for table in (getattr(SOURCES[name], "TABLE", LISTINGS) for name in cfg.sources)}
+    for table in tables.values():
+        rows = store.load(table)
+        changed = reopened = 0
+        for row in rows.values():
+            text = "\n".join(filter(None, [row.get("title"), row.get("key_features"), row.get("description")]))
+            turnover = extract.turnover(text)
+            profit, profit_type = extract.profit(text)
+            if (turnover, profit) == (row.get("turnover_aud"), row.get("profit_aud")):
+                continue
+            if len(row.get("description", "")) >= extract.DESCRIPTION_LIMIT:
+                row["sitemap_lastmod"] = ""
+                reopened += 1
+                continue
+            row.update(turnover_aud=turnover, profit_aud=profit, profit_type=profit_type)
+            row["notes"] = extract.build_notes(row)
+            changed += 1
+        store.save(table, rows)
+        log.info("%s: %d rows corrected, %d left for the next run to open again", table.tab, changed, reopened)
+    return []
+
+
 def wait_randomly(cfg: Config) -> None:
     wait = random.uniform(*cfg.start_jitter_minutes) * 60
     log.info("Waiting %.0f seconds before starting", wait)

@@ -35,6 +35,27 @@ def test_amount_written_before_its_keyword():
     assert extract.turnover("$1.2m annual turnover") == 1_200_000
 
 
+def test_an_amount_never_belongs_to_the_next_line():
+    assert extract.profit("Turnover: $1.3 million\nNet Profit: $120,000\nRent/Lease: Lease") == (120_000, "Net profit")
+    assert extract.profit("Turnover: $884,000\nNet Profit: Not disclosed\nRent/Lease: Lease") == (None, "")
+    assert extract.turnover("Asking $750,000\nTurnover: Not disclosed") is None
+    assert extract.profit("Snapshot $490,000\r\n\tNet profit is healthy") == (None, "")
+
+
+def test_labelled_lines_come_first_and_not_disclosed_falls_back_to_the_description():
+    assert extract.turnover("More than $1.33 million annual revenue\nTurnover: $1,338,353\nNet Profit: $274,521") == 1_338_353
+    assert extract.turnover("Turnover: $5.4M proven revenue; 2027 forecast at $10M+") == 5_400_000
+    assert extract.profit("$900k net profit last year\nNet Profit: $875,000") == (875_000, "Net profit")
+    assert extract.turnover("Turnover: Not disclosed\nAnnual revenue of $500,000") == 500_000
+    assert extract.profit("Net Profit: Not disclosed\nEBITDA of $210,000") == (210_000, "EBITDA")
+
+
+def test_weekly_keyword_before_the_amount_and_a_stray_k():
+    assert extract.turnover("At a glance: Weekly Sales: $6,370 Rent: $751") == 6_370 * 52
+    assert extract.turnover("Weekly turnover averaging approximately $20,000") == 20_000 * 52
+    assert extract.profit("$110500K Profit to One Owner-Operator") == (110_500, "Net profit")
+
+
 def test_phone_numbers_found_once_each():
     text = "Call John on 0422 930 549 or 1300 366 521. Mobile: 0422930549. Office +61 8 9381 1111"
     assert extract.phones(text) == ["0422 930 549", "1300 366 521", "+61 8 9381 1111"]

@@ -19,7 +19,6 @@ SITEMAP = "https://bsale.com.au/sitemap-businesses.php"
 _LISTING_URL = re.compile(r"^https://bsale\.com\.au/(?:listing|franchise-for-sale)/.+-(?P<state>[a-z]{2,3})-(?P<id>\d+)$")
 _SITEMAP_NS = "{http://www.sitemaps.org/schemas/sitemap/0.9}"
 _LOCATION = re.compile(r"^(?:(?P<suburb>[^,]+),\s*)?(?P<state>[A-Za-z ]+?)\s*(?P<postcode>\d{4})?$")
-_DESCRIPTION_LIMIT = 5000
 
 # Category link -> industry, read once from the site's own menu.
 _industries: dict[str, str] = {}
@@ -97,7 +96,7 @@ def parse_listing(html: str, cfg: Config) -> dict | None:
         "key_features": "\n".join(features),
         "broker": _text(side.select_one("p.text-primary")) if side else "",
         "broker_phone": (phone_link.get("data-ph") or phone_link.get("href", "").removeprefix("tel:")) if phone_link else "",
-        "description": description[:_DESCRIPTION_LIMIT],
+        "description": description[:extract.DESCRIPTION_LIMIT],
         "fingerprint": hashlib.sha1(description.encode()).hexdigest()[:12],
     }
     listing["notes"] = extract.build_notes(listing)

@@ -5,7 +5,9 @@ in the Key features and Description columns.
 """
 import re
 
-_NUMBER = r"(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
+DESCRIPTION_LIMIT = 5000  # characters of a listing's description the sheet keeps
+
+_NUMBER =r"(\d{1,3}(?:,\d{3})+(?:\.\d+)?|\d+(?:\.\d+)?)"
 # The lookahead stops "$2026FY" (a year typed after a dollar sign) from reading as $2,026.
 _MONEY = re.compile(r"\$\s?" + _NUMBER + r"(?:\s?(k|m|mil|million)\b)?(?![A-Za-z0-9])", re.I)
 _BARE_PRICE = re.compile(r"^\s*(\d{1,3}(?:,\d{3})+|\d{4,})\b")
@@ -19,8 +21,16 @@ _TURNOVER_WORDS = r"turnover|revenue|gross sales|annual sales|sales|takings"
 _PROFIT_WORDS = r"adjusted net profit|net profit|ebitda|ebit|profit|net income|sde|owner'?s? (?:earnings|benefit|income|return)|return to (?:the )?owners?"
 _TURNOVER = re.compile(rf"\b(?:{_TURNOVER_WORDS}|averaging)\b", re.I)
 _PROFIT = re.compile(rf"\b(?:{_PROFIT_WORDS})\b", re.I)
-# Words allowed between an amount and its keyword, as in "$13K weekly sales" or "~$160K net profit".
-_LEAD_IN = r"^\s*((?:(?:weekly|per week|a week|monthly|per month|annual|yearly|approx\.?|approximately|in|of)\s+)*)(?:net\s+)?(?:{words})\b"
+# bsale's own labelled lines, "Turnover: $1.3m" and "Net Profit: $120,000": the best source when they give a figure.
+_TURNOVER_LINE = re.compile(r"^[^\S\r\n]*turnover[^\S\r\n]*:", re.I | re.M)
+_PROFIT_LINE = re.compile(r"^[^\S\r\n]*net profit[^\S\r\n]*:", re.I | re.M)
+# Words allowed between an amount and its keyword, as in "$13K weekly sales" or "~$160K net profit". They must
+# share a line: bsale lists "Turnover: $1.3m" above "Net Profit: $120,000", and the amount isn't that next line's.
+_SPACE = r"[^\S\r\n]"
+_LEAD_IN = (
+    rf"^{_SPACE}*((?:(?:weekly|per week|a week|monthly|per month|annual|yearly|approx\.?|approximately|in|of){_SPACE}+)*)"
+    rf"(?:net{_SPACE}+)?(?:{{words}})\b"
+)
 _PHONE = re.compile(r"(?:\+?61\s?|\b0)[2-478](?:[ -]?\d){8}\b|\b1[38]00(?:[ -]?\d){6}\b|\b13(?:[ -]?\d){4}\b")
 _PROFIT_TYPES = [
     ("adjusted", "Adjusted net profit"),
@@ -75,14 +85,18 @@ def price(price_text: str) -> int | None:
 
 
 def turnover(text: str) -> int | None:
-    value, _ = _amount_before(_TURNOVER_WORDS, text)
+    value, _ = _amount_after(_TURNOVER_LINE, text)
+    if value is None:
+        value, _ = _amount_before(_TURNOVER_WORDS, text)
     if value is None:
         value, _ = _amount_after(_TURNOVER, text)
     return value
 
 
 def profit(text: str) -> tuple[int | None, str]:
-    value, wording = _amount_before(_PROFIT_WORDS, text)
+    value, wording = _amount_after(_PROFIT_LINE, text)
+    if value is None:
+        value, wording = _amount_before(_PROFIT_WORDS, text)
     if value is None:
         value, wording = _amount_after(_PROFIT, text)
     if value is None:
@@ -159,7 +173,8 @@ def _amount(match: re.Match) -> int:
     value = float(match.group(1).replace(",", ""))
     suffix = (match.group(2) or "").lower()
     if suffix == "k":
-        value *= 1_000
+        if value < 100_000:  # "$110500K" is $110,500 with a stray K
+            value *= 1_000
     elif suffix:
         value *= 1_000_000
     return int(round(value))
@@ -214,9 +229,10 @@ def _amount_after(keyword: re.Pattern, text: str, window: int = 80) -> tuple[int
             continue
         value = _amount(match)
         after = tail[match.end():]
-        if _PER_WEEK.search(after):
+        before = text[max(0, found.start() - 12): found.start()]  # "Weekly sales: $6,370"
+        if _PER_WEEK.search(after) or re.search(r"\bweekly\s+$", before, re.I):
             value *= 52
-        elif _PER_MONTH.search(after):
+        elif _PER_MONTH.search(after) or re.search(r"\bmonthly\s+$", before, re.I):
             value *= 12
         if value >= 1_000:
             return value, found.group(0) + between

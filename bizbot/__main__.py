@@ -6,8 +6,9 @@
   python -m bizbot seek-alerts   SEEK's alert emails in your Gmail (runs on GitHub) -> SEEK listings tab
   python -m bizbot setup    connect this computer to the Google Sheet (asks for the key file and sheet link)
   python -m bizbot tidy-sheet   colours, filters and the two search tabs in the Google Sheet (safe to run again)
+  python -m bizbot reread   apply improved reading rules to the listings already in the sheet (opens no websites)
 
-The first four take [--store sheet|local] [--limit N] [--jitter]. For seek, --limit is result pages per search.
+Most take [--store sheet|local] [--limit N] [--jitter]. For seek, --limit is result pages per search.
 Settings for this computer (SHEET_ID, GOOGLE_SERVICE_ACCOUNT_FILE, ...) can live in a .env file in the project folder.
 """
 import argparse
@@ -21,7 +22,7 @@ import sys
 from pathlib import Path
 
 from . import config, health, seek, seek_alerts, sheet_view
-from .run import run
+from .run import reread, run
 from .sources import SOURCES
 from .store import LocalStore, SheetError, SheetStore, sheet_id_from
 
@@ -50,12 +51,13 @@ def main() -> int:
     commands.add_parser("seek-alerts", parents=[options], help="SEEK alert emails in your Gmail (runs on GitHub) -> SEEK listings tab")
     commands.add_parser("setup", help="Connect this computer to the Google Sheet")
     commands.add_parser("tidy-sheet", help="Colours, filters and the two search tabs in the Google Sheet")
+    commands.add_parser("reread", parents=[options], help="Apply improved reading rules to the listings already in the sheet")
     args = parser.parse_args()
     if args.command == "setup":
         return setup()
     if args.command == "tidy-sheet":
         return tidy_sheet()
-    job ={"run": run, "health": health.run, "seek": seek.run, "seek-alerts": seek_alerts.run}[args.command]
+    job = {"run": run, "health": health.run, "seek": seek.run, "seek-alerts": seek_alerts.run, "reread": reread}[args.command]
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
