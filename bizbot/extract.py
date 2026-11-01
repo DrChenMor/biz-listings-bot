@@ -109,20 +109,21 @@ def sale_reasons(text: str) -> str:
 
 
 def status(title: str, price_text: str) -> str:
-    text = f"{title} {price_text}".lower()
-    if "under offer" in text or "under contract" in text:
-        return "Under offer"
     # Only a price or title that says the business itself is sold ("SOLD", "Sold - Cafe ...", "Legal Practice -
     # Sold! Another Wanted"), not one that mentions selling ("first 10 locations sold", "must be sold").
+    # The title comes first: it's the seller's own word, and bsale's price box lags behind it both ways
+    # ("Sold - Cafe" priced "Under Contract / Offer", "Under Offer - Cafe" priced "SOLD").
     title = title or ""
     if (
-        re.match(r"^\W*sold\b", price_text or "", re.I)
-        or re.match(r"^\W*sold\b", title, re.I)
+        re.match(r"^\W*sold\b", title, re.I)
         or re.search(r"[-–|(\[]\s*sold\b", title, re.I)
         or re.search(r"\bsold\W+another\s+wanted", f"{title} {price_text}", re.I)
     ):
         return "Sold"
-    return "Active"
+    text = f"{title} {price_text}".lower()
+    if "under offer" in text or "under contract" in text:
+        return "Under offer"
+    return "Sold" if re.match(r"^\W*sold\b", price_text or "", re.I) else "Active"
 
 
 def perth_metro(postcode: str, ranges: list[tuple[int, int]]) -> str:

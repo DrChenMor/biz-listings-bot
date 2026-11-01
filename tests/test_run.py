@@ -148,13 +148,18 @@ def test_rows_wrongly_marked_sold_earlier_are_corrected_not_skipped():
     site, changes, skipped = FakeSite(), [], {}
     site.add("1", "t1", title="New franchise", price_text="Intro offer, first 10 locations sold")
     site.add("2", "t1", title="Nails Salon", price_text="SOLD")
+    site.add("3", "t1", title="Sold - Lotto Store", price_text="Under Contract / Offer")
+    site.add("4", "t1", title="Under Offer - Barbershop", price_text="SOLD")
     listings = {
         "fake:1": {"key": "fake:1", "source": "fake", "title": "New franchise", "price_text": "Intro offer, first 10 locations sold", "status": "Sold", "sitemap_lastmod": "t1"},
         "fake:2": {"key": "fake:2", "source": "fake", "title": "Nails Salon", "price_text": "SOLD", "status": "Sold", "sitemap_lastmod": "t1"},
+        "fake:3": {"key": "fake:3", "source": "fake", "title": "Sold - Lotto Store", "price_text": "Under Contract / Offer", "status": "Under offer", "sitemap_lastmod": "t1"},
+        "fake:4": {"key": "fake:4", "source": "fake", "title": "Under Offer - Barbershop", "price_text": "SOLD", "status": "Under offer", "sitemap_lastmod": "t1"},
     }
     sync_source(site, config.load(), None, listings, changes, 100, skipped)
     assert listings["fake:1"]["status"] == "Active"
-    assert set(skipped) == {"fake:2"}
+    assert listings["fake:4"]["status"] == "Under offer"
+    assert set(skipped) == {"fake:2", "fake:3"}
     assert site.opened == []  # nothing needed re-opening
 
 

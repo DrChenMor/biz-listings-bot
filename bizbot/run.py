@@ -85,8 +85,9 @@ def sync_source(source, cfg: Config, client: PoliteClient, listings: dict, chang
     for key, row in list(listings.items()):
         if row.get("source") != source.NAME:
             continue
-        if row.get("status") == "Sold":
-            # Re-check with the current rule: an earlier one also caught text like "10 locations sold".
+        if row.get("status") in ("Sold", "Under offer"):
+            # Re-check with the current rule: earlier ones caught text like "10 locations sold" as sold, and
+            # kept "Sold - Cafe" as under offer when its price box said "Under Contract / Offer".
             row["status"] = extract.status(row.get("title", ""), row.get("price_text", ""))
         if reason := skip_reason(cfg, row):
             skipped[key] = _skip(key, listings.pop(key), stamp, reason)

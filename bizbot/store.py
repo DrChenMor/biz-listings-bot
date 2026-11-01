@@ -173,8 +173,6 @@ class SheetStore:
         self._gspread = gspread
         self.service_account = credentials.get("client_email") or "the service account"
         self._worksheets: dict[str, object] = {}
-        # Which record sits on which row of each tab, so rows (and your own columns) stay in place.
-        self._row_keys: dict[str, list[str]] = {}
         with self._explained():
             try:
                 # The back-off client retries when Google says "too many requests" or has a hiccup.
@@ -195,30 +193,29 @@ class SheetStore:
         if values and values[0][: len(table.columns)] != table.headers:
             log.warning("%s header row differs from the bot's columns; it will be rewritten", table.tab)
         records = {}
-        row_keys = []
         for cells in values[1:]:
             cells = list(cells) + [""] * (len(table.columns) - len(cells))
             record = {field: cells[i] for i, (field, _) in enumerate(table.columns)}
             for field in record:
                 record[field] = _number(record[field]) if field in table.numeric else str(record[field])
-            row_keys.append(record["key"])
             if record["key"]:
                 records[record["key"]] = record
-        self._row_keys[table.tab] = row_keys
         log.info("Loaded %d rows from the %s tab", len(records), table.tab)
         return records
 
     def save(self, table: Table, records: dict[str, dict]) -> None:
-        row_keys = self._row_keys.get(table.tab, [])
-        # Rows whose record was dropped (e.g. a food business) are deleted whole, with your columns.
-        gone = [i for i, k in enumerate(row_keys) if k and k not in records]
-        row_keys = [k for k in row_keys if not k or k in records]
-        known = set(row_keys)
-        new_keys = sorted((k for k in records if k not in known), key=lambda k: (records[k].get("first_seen", ""), k), reverse=True)
-        order = new_keys + row_keys
-        body = [table.headers] + [_row(records[k], table.columns) if k in records else [""] * len(table.columns) for k in order]
         ws = self._worksheet(table.tab, table.headers)
         with self._explained():
+            # Which record sits on which row, read fresh: someone may have sorted the tab during the run,
+            # and each row must stay with your own columns on the right of it.
+            row_keys = ws.col_values([field for field, _ in table.columns].index("key") + 1)[1:]
+            # Rows whose record was dropped (e.g. a food business) are deleted whole, with your columns.
+            gone = [i for i, k in enumerate(row_keys) if k and k not in records]
+            row_keys = [k for k in row_keys if not k or k in records]
+            known = set(row_keys)
+            new_keys = sorted((k for k in records if k not in known), key=lambda k: (records[k].get("first_seen", ""), k), reverse=True)
+            order = new_keys + row_keys
+            body = [table.headers] + [_row(records[k], table.columns) if k in records else [""] * len(table.columns) for k in order]
             if gone:
                 # One request, bottom row first so the row numbers above stay valid.
                 ws.spreadsheet.batch_update({"requests": [
@@ -231,8 +228,12 @@ class SheetStore:
             if ws.col_count < len(table.columns):
                 ws.add_cols(len(table.columns) - ws.col_count)
             ws.update(values=body, range_name="A1", value_input_option="RAW")
-        self._row_keys[table.tab] = order
         log.info("Saved %d rows (%d new, %d removed) to the %s tab", len(records), len(new_keys), len(gone), table.tab)
+
+    def apply(self, change) -> None:
+        """Run change(spreadsheet), with Google's errors explained."""
+        with self._explained():
+            change(self.book)
 
     def log(self, changes: list[dict], runs: list[dict]) -> None:
         with self._explained():

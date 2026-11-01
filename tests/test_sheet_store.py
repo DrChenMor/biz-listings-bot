@@ -35,6 +35,12 @@ class FakeWorksheet:
         width = max((len(r) for r in rows), default=0)
         return [r + [""] * (width - len(r)) for r in rows]
 
+    def col_values(self, col):
+        cells = [r[col - 1] if col <= len(r) else "" for r in self.grid]
+        while cells and not cells[-1]:
+            cells.pop()
+        return cells
+
     def insert_rows(self, values, row=1, value_input_option=None):
         for i, v in enumerate(values):
             self.grid.insert(row - 1 + i, list(v))
@@ -59,7 +65,6 @@ def make_store():
     store = SheetStore.__new__(SheetStore)
     store._gspread = gspread
     store._worksheets = {"Listings": FakeWorksheet([list(HEADERS)]), "Changes": FakeWorksheet(), "Runs": FakeWorksheet()}
-    store._row_keys = {}
     return store
 
 
@@ -109,6 +114,28 @@ def test_dropped_records_are_deleted_with_your_columns_and_the_rest_stay_aligned
 
     rows = store._worksheets["Listings"].grid[1:]
     assert [(r[title], r[len(HEADERS)]) for r in rows] == [("Business 4", "note for Business 4"), ("Business 2", "note for Business 2")]
+
+
+def test_sorting_the_tab_during_a_run_keeps_your_columns_with_their_listing():
+    store = make_store()
+    store.load(LISTINGS)
+    store.save(LISTINGS, {f"bsale:{i}": listing(i) for i in (1, 2, 3)})
+    grid = store._worksheets["Listings"].grid
+    title = HEADERS.index("Title")
+    grid[0].append("Contacted?")
+    for row in grid[1:]:
+        row.append("note for " + row[title])
+
+    records = store.load(LISTINGS)
+    grid[1:] = sorted(grid[1:], key=lambda row: row[title])  # someone sorts A to Z while the bot works
+    records["bsale:2"]["price_aud"] = 90_000
+    records["bsale:4"] = listing(4)
+    store.save(LISTINGS, records)
+
+    rows = store._worksheets["Listings"].grid[1:]
+    assert [r[title] for r in rows] == ["Business 4", "Business 1", "Business 2", "Business 3"]
+    assert [r[len(HEADERS)] for r in rows[1:]] == ["note for Business 1", "note for Business 2", "note for Business 3"]
+    assert rows[2][HEADERS.index("Price (AUD)")] == 90_000
 
 
 def test_two_computers_take_turns():

@@ -39,6 +39,22 @@ it stops that site for the run and writes "blocked" in the Runs tab.
 
 ## The Google Sheet
 
+**Find a business** and **Find a health practice** are the easy way in. Pick from the yellow boxes and the list
+updates by itself. Find a business joins Listings, CRE listings and SEEK listings into one list; there's nothing
+to sort or filter by hand, and looking around there can't upset the bots' data.
+
+Every data tab also has filter buttons on its header row, one line per row, money shown as money, new listings
+in green and under-offer ones in orange. Technical columns are hidden, and typing over a bot's column asks you
+to confirm first. To set all this up, or after changing it in `bizbot/sheet_view.py`:
+
+```bash
+.venv/bin/python -m bizbot tidy-sheet
+```
+
+It only changes how tabs look, never the data, and keeps what's picked in the yellow boxes. The hidden **Find data**
+and **Lists** tabs feed the search tabs. Find a business leaves out any profit as high as the turnover (the reader
+took a sales figure for it) and SEEK's $1 "price on application".
+
 **Listings** tab, one row per listing:
 Status · Title · Notes · Industry · Category · Suburb · Postcode · Region · Perth metro · Asking price ·
 Price (AUD) · Price basis · Turnover · Profit · Profit type · Established · Reason for sale ·
@@ -49,7 +65,9 @@ Broker / seller · Broker phone · URL · … · Key features · Description
   When a listing states profit, the note also gives the price-to-profit multiple.
 - Turnover and profit are read from the listing text by patterns. They are right most of the time, but
   check the Description before relying on a number.
-- **Status**: Active, Under offer, Sold, or Removed (gone from the site).
+- **Status**: Active, Under offer, or Removed (gone from the site). Sold businesses leave the tab for **Skipped**.
+  When a title says "Under Offer" and bsale's price box says "SOLD", the listing stays as Under offer: the title is
+  the seller's own word. A title that says "Sold" wins over a price box saying "Under Contract / Offer".
 - New listings are added at the top.
 - **Add your own columns to the right of the "Key" column** (for example "Contacted?" or "My notes").
   The bot keeps them lined up with their listing. Don't edit the bot's columns; it overwrites them.

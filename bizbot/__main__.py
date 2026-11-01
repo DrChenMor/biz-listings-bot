@@ -5,8 +5,9 @@
   python -m bizbot seek     your SEEK Business searches, in a visible browser window -> SEEK listings tab
   python -m bizbot seek-alerts   SEEK's alert emails in your Gmail (runs on GitHub) -> SEEK listings tab
   python -m bizbot setup    connect this computer to the Google Sheet (asks for the key file and sheet link)
+  python -m bizbot tidy-sheet   colours, filters and the two search tabs in the Google Sheet (safe to run again)
 
-All but setup take [--store sheet|local] [--limit N] [--jitter]. For seek, --limit is result pages per search.
+The first four take [--store sheet|local] [--limit N] [--jitter]. For seek, --limit is result pages per search.
 Settings for this computer (SHEET_ID, GOOGLE_SERVICE_ACCOUNT_FILE, ...) can live in a .env file in the project folder.
 """
 import argparse
@@ -19,7 +20,7 @@ import shutil
 import sys
 from pathlib import Path
 
-from . import config, health, seek, seek_alerts
+from . import config, health, seek, seek_alerts, sheet_view
 from .run import run
 from .sources import SOURCES
 from .store import LocalStore, SheetError, SheetStore, sheet_id_from
@@ -48,10 +49,13 @@ def main() -> int:
     commands.add_parser("seek", parents=[options], help="Your SEEK Business searches, in a visible browser window -> SEEK listings tab")
     commands.add_parser("seek-alerts", parents=[options], help="SEEK alert emails in your Gmail (runs on GitHub) -> SEEK listings tab")
     commands.add_parser("setup", help="Connect this computer to the Google Sheet")
+    commands.add_parser("tidy-sheet", help="Colours, filters and the two search tabs in the Google Sheet")
     args = parser.parse_args()
     if args.command == "setup":
         return setup()
-    job = {"run": run, "health": health.run, "seek": seek.run, "seek-alerts": seek_alerts.run}[args.command]
+    if args.command == "tidy-sheet":
+        return tidy_sheet()
+    job ={"run": run, "health": health.run, "seek": seek.run, "seek-alerts": seek_alerts.run}[args.command]
 
     logging.basicConfig(
         level=logging.DEBUG if args.verbose else logging.INFO,
@@ -126,6 +130,19 @@ def setup() -> int:
         encoding="utf-8",
     )
     print(f"\nDone: this computer is connected to the sheet '{book.title}'.")
+    return 0
+
+
+def tidy_sheet() -> int:
+    """Style the Google Sheet and build its search tabs."""
+    try:
+        if not os.environ.get("SHEET_ID"):
+            raise SheetError("SHEET_ID is not set. Run setup first.")
+        SheetStore(os.environ["SHEET_ID"], _google_credentials()).apply(sheet_view.tidy)
+    except SheetError as e:
+        print(e)
+        return 1
+    print("Done: the sheet is tidied.")
     return 0
 
 
