@@ -67,26 +67,27 @@ CONTACTS = ["Everyone", "Has an email", "Has a website"]
 BOT_COLUMNS_NOTE = "The bots fill these columns. Add your own columns to the right instead."
 SEARCH_TAB_NOTE = "This list fills itself. Change only the yellow boxes."
 
-# How each tab looks. Columns not listed in `widths` are 120 wide.
+# How each tab looks. Columns not listed in `widths` are 120 wide. Key stays visible: it's the last bot column,
+# and people add their own columns to the right of it. A column inserted before it would be overwritten.
 _LISTING_LOOK = dict(
-    hide=["Source", "Listing ID", "Last seen", "Site updated", "Fingerprint", "Key"],
+    hide=["Source", "Listing ID", "Last seen", "Site updated", "Fingerprint"],
     widths={"Status": 90, "Title": 340, "Notes": 420, "Category": 170, "Suburb": 130, "Postcode": 75, "Region": 170, "Perth metro": 70,
-            "Asking price": 150, "Price (AUD)": 100, "Broker / seller": 190, "Broker phone": 130, "URL": 200, "Key features": 300, "Description": 400},
+            "Asking price": 150, "Price (AUD)": 100, "Broker / seller": 190, "Broker phone": 130, "URL": 200, "Key features": 300, "Description": 400, "Key": 70},
     money=["Price (AUD)", "Turnover (AUD/yr)", "Profit (AUD/yr)"],
     new_since="First seen",
 )
 DATA_TABS = [
     dict(table=LISTINGS, **_LISTING_LOOK),
     dict(table=CRE, **_LISTING_LOOK),
-    dict(table=SEEK, hide=["Listing ID", "SEEK updated", "Last seen", "Key"],
+    dict(table=SEEK, hide=["Listing ID", "SEEK updated", "Last seen"],
          widths={"Status": 90, "Title": 340, "Asking price": 150, "Price (AUD)": 100, "Industry": 240, "Location": 220, "Advertiser": 200,
-                 "Phones in listing": 150, "Summary": 420, "Description": 400, "URL": 200},
+                 "Phones in listing": 150, "Summary": 420, "Description": 400, "URL": 200, "Key": 70},
          money=["Price (AUD)", "Turnover (AUD/yr)", "Profit (AUD/yr)"], new_since="First seen"),
     dict(table=HEALTH,
-         hide=["Latitude", "Longitude", "Last seen", "Details checked", "ABN checked", "healthdirect service IDs", "Organisation ID", "Location ID", "Key"],
+         hide=["Latitude", "Longitude", "Last seen", "Details checked", "ABN checked", "healthdirect service IDs", "Organisation ID", "Location ID"],
          widths={"Status": 80, "Business name": 280, "Sector": 150, "Type": 130, "Main service": 180, "All services listed": 240, "Address": 240,
                  "Suburb": 120, "Postcode": 75, "Phone": 130, "Email": 220, "Website": 190, "Registered entity (ABN)": 200, "Owner name on ABN": 200,
-                 "Practitioners": 200, "Map": 120, "healthdirect link": 150},
+                 "Practitioners": 200, "Map": 120, "healthdirect link": 150, "Key": 70},
          money=[]),
 ]
 LOG_TABS = [
