@@ -25,6 +25,8 @@ jobs:
       TZ: Australia/Perth
       SHEET_ID: ${{ secrets.SHEET_ID }}
       GOOGLE_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
     steps:
       - uses: actions/checkout@v7
 
@@ -43,3 +45,10 @@ jobs:
           python -m bizbot run --store sheet --source bsale
           ${{ github.event_name == 'schedule' && '--jitter' || '' }}
           ${{ github.event.inputs.limit && format('--limit {0}', github.event.inputs.limit) || '' }}
+
+      # Copies the Sheet into the Deal desk website. It switches on once the two SUPABASE secrets exist,
+      # and a problem here never fails the bot's run.
+      - name: Update the website
+        if: env.SUPABASE_URL != ''
+        continue-on-error: true
+        run: python -m bizbot sync-db

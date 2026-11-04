@@ -21,6 +21,8 @@ jobs:
       # Reading switches on by itself once both of these secrets exist.
       GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
       GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
     steps:
       - uses: actions/checkout@v7
 
@@ -34,3 +36,10 @@ jobs:
 
       - name: Read SEEK alert emails
         run: python -m bizbot seek-alerts --store sheet
+
+      # Copies the Sheet into the Deal desk website. It switches on once the two SUPABASE secrets exist,
+      # and a problem here never fails the bot's run.
+      - name: Update the website
+        if: env.SUPABASE_URL != ''
+        continue-on-error: true
+        run: python -m bizbot sync-db
