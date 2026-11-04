@@ -321,6 +321,25 @@ def test_a_form_with_a_check_is_filled_and_left_for_a_person(browser, extra):
         assert value(page, "answer") == ""
 
 
+PERSON_TICKS = """<div class="g-recaptcha" data-sitekey="x"></div><textarea name="g-recaptcha-response" style="display:none"></textarea>
+  <script>setTimeout(() => document.querySelector('[name=g-recaptcha-response]').value = 'token', 1500)</script>"""
+PERSON_ANSWERS = """<input name="answer" placeholder="4 + 4 = ?"><script>setTimeout(() => document.querySelector('[name=answer]').value = '8', 1500)</script>"""
+
+
+@pytest.mark.parametrize("extra", [PERSON_TICKS, PERSON_ANSWERS])
+def test_the_agent_presses_send_once_a_person_has_done_the_check(browser, extra):
+    page = open_page(browser, FORM.format(extra=extra))
+    outcome = forms.complete(page, ANSWERS, live=True, person_wait=15)
+    assert outcome.status == "Sent" and "agent pressed send" in outcome.detail and page.evaluate("window.sent")
+
+
+def test_test_mode_never_waits_for_the_check(browser):
+    page = open_page(browser, FORM.format(extra=PERSON_TICKS))
+    assert forms.complete(page, ANSWERS, live=False).status == "Test only"
+    page.wait_for_timeout(2500)
+    assert not page.evaluate("window.sent")
+
+
 def test_a_security_check_stops_the_enquiry(browser):
     page = open_page(browser, "<p>Verify you are human</p>" + FORM.format(extra=""))
     assert forms.complete(page, ANSWERS, live=True).status == "Stopped"

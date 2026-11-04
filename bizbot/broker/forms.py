@@ -1,8 +1,8 @@
 """Fills a listing site's enquiry form in a visible browser window.
 
-A plain form is sent here. A form behind a CAPTCHA or a sum is filled, then left for a person to finish in the same
-window: the agent never answers one. A security check on the page stops the enquiry. In test mode forms are filled and
-nothing is sent. Marketing and "similar businesses" boxes are left unticked.
+A plain form is sent here. On a form with a CAPTCHA or a sum, a person does the check in the same window and the agent
+presses send once it's done: the agent never answers one. A security check on the page stops the enquiry. In test mode
+forms are filled and nothing is sent. Marketing and "similar businesses" boxes are left unticked.
 """
 import logging
 import re
@@ -58,7 +58,7 @@ def complete(page, fields: dict, live: bool, person_wait: int = PERSON_WAIT_SECO
     if gated:
         return _wait_for_person(page, form, person_wait)
     start = page.url
-    form.locator("button[type=submit], input[type=submit]").first.click()
+    _submit_button(form).click()
     if _gated(page, form):
         return _wait_for_person(page, form, person_wait)
     if _confirmed(page, form, start, 20):
@@ -110,11 +110,38 @@ def _hint(control) -> str:
 
 
 def _wait_for_person(page, form, seconds: int) -> Outcome:
-    log.info("Form filled at %s. Finish the check and press send in the browser window.", page.url)
+    """Wait for a person to do the check, then press send. They can also press send themselves."""
+    log.info("Form filled at %s. Do the check in the browser window; the agent presses send once it's done.", page.url)
     start = page.url
-    if _confirmed(page, form, start, seconds):
-        return Outcome("Sent", "A person finished the form.")
+    deadline = time.monotonic() + seconds
+    last, steady = "", 0
+    while time.monotonic() < deadline and not page.is_closed():
+        if _sent_now(page, form, start):
+            return Outcome("Sent", "A person did the check and pressed send.")
+        done = _check_done(page, form)
+        # A typed answer counts once it has stopped changing, so a half-typed "1" of "12" isn't sent.
+        steady = steady + 1 if done and done == last else 0
+        last = done
+        if steady >= 2:
+            _submit_button(form).click()
+            if _confirmed(page, form, start, 20):
+                return Outcome("Sent", "A person did the check; the agent pressed send.")
+            last, steady = "", 0
+        page.wait_for_timeout(1000)
     return Outcome("Needs you", "The form was filled but not sent. It has a check only a person can do.")
+
+
+def _check_done(page, form) -> str:
+    """The check's answers once every part is done, or "" while any part is still empty."""
+    tokens = [t.input_value() for t in page.locator("[name=g-recaptcha-response], [name=cf-turnstile-response], [name=h-captcha-response]").all()]
+    answers = [c.input_value().strip() for c in _controls(form) if _ANSWER.search(_hint(c))]
+    parts = tokens + answers
+    return "|".join(parts) if parts and all(parts) else ""
+
+
+def _submit_button(form):
+    buttons = form.locator("button[type=submit], input[type=submit]")
+    return buttons.first if buttons.count() else form.locator("button").last
 
 
 def _confirmed(page, form, start: str, seconds: int) -> bool:
@@ -122,10 +149,14 @@ def _confirmed(page, form, start: str, seconds: int) -> bool:
     while time.monotonic() < deadline:
         if page.is_closed():
             return False
-        if page.url != start or _SENT.search(_text(page)) or not form.count() or not form.is_visible():
+        if _sent_now(page, form, start):
             return True
         page.wait_for_timeout(1000)
     return False
+
+
+def _sent_now(page, form, start: str) -> bool:
+    return page.url != start or bool(_SENT.search(_text(page))) or not form.count() or not form.is_visible()
 
 
 def _text(page) -> str:
