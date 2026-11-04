@@ -23,6 +23,26 @@ export type Business = {
 
 export type Tracking = { business_id: string; stage: string; next_step: string | null; next_due: string | null; owner: string | null };
 
+export const AGENT_SITES = ["bsale", "business2sell", "AnyBusiness", "businessforsale.com.au", "No Agent Business"];
+
+export type Enquiry = {
+  id: number; business_id: string; status: string; detail: string | null; asked_by: string | null; message: string | null;
+  requested_at: string; sent_at: string | null; updated_at: string;
+};
+
+export type Evaluation = {
+  verdict: string; headline: string; asking_price: string; years: { year: string; turnover: string; profit: string }[];
+  adjusted_profit: string; price_to_profit: string; lease: string; staff: string; owner_involvement: string;
+  strengths: string[]; risks: string[]; missing: string[]; questions: string[];
+};
+
+export function statusClass(status: string): string {
+  if (status === "Needs you" || status === "Stopped") return "pill r-stop";
+  if (status === "Evaluated") return "pill r-call";
+  if (["Queued", "Sending", "Test only", "Closed"].includes(status)) return "pill r-broker";
+  return "pill r-email";
+}
+
 export function routeClass(route: string): string {
   if (route === "Private seller") return "pill r-private";
   if (route === "Call owner") return "pill r-call";

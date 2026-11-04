@@ -2,7 +2,7 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { signOut } from "@/lib/actions";
 
-const SCREENS = [["/", "Today"], ["/find", "Find"], ["/pipeline", "Pipeline"], ["/sources", "Sources"]];
+const SCREENS = [["/", "Today"], ["/find", "Find"], ["/pipeline", "Pipeline"], ["/agent", "Agent"], ["/sources", "Sources"]];
 
 export function Shell({ user, active, children }: { user: string; active: string; children: ReactNode }) {
   return (

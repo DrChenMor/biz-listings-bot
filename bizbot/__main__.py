@@ -8,6 +8,8 @@
   python -m bizbot tidy-sheet   colours, filters and the two search tabs in the Google Sheet (safe to run again)
   python -m bizbot reread   apply improved reading rules to the listings already in the sheet (opens no websites)
   python -m bizbot sync-db  copy the sheet's businesses into the Deal desk app's database (the sheet is only read)
+  python -m bizbot agent-send    the broker agent sends the enquiries queued in the app, in a visible browser window
+  python -m bizbot agent-inbox   the broker agent reads replies, returns plain NDAs and evaluates documents
 
 Most take [--store sheet|local] [--limit N] [--jitter]. For seek, --limit is result pages per search.
 Settings for this computer (SHEET_ID, GOOGLE_SERVICE_ACCOUNT_FILE, ...) can live in a .env file in the project folder.
@@ -54,6 +56,8 @@ def main() -> int:
     commands.add_parser("tidy-sheet", help="Colours, filters and the two search tabs in the Google Sheet")
     commands.add_parser("reread", parents=[options], help="Apply improved reading rules to the listings already in the sheet")
     commands.add_parser("sync-db", help="Copy the sheet's businesses into the Deal desk app's database")
+    commands.add_parser("agent-send", parents=[options], help="The broker agent sends the enquiries queued in the app")
+    commands.add_parser("agent-inbox", help="The broker agent reads replies, returns plain NDAs and evaluates documents")
     args = parser.parse_args()
     if args.command == "setup":
         return setup()
@@ -61,6 +65,10 @@ def main() -> int:
         return tidy_sheet()
     if args.command == "sync-db":
         return sync_db()
+    if args.command == "agent-send":
+        return agent_send(args.limit)
+    if args.command == "agent-inbox":
+        return agent_inbox()
     job = {"run": run, "health": health.run, "seek": seek.run, "seek-alerts": seek_alerts.run, "reread": reread}[args.command]
 
     logging.basicConfig(
@@ -161,6 +169,41 @@ def sync_db() -> int:
         store = SheetStore(os.environ["SHEET_ID"], _google_credentials())
         print(f"Sent {db_sync.sync(config.load(), store)} businesses to the database.")
     except SheetError as e:
+        print(e)
+        return 1
+    return 0
+
+
+def agent_send(limit: int | None) -> int:
+    """Send the enquiries queued in the app. Test mode unless AGENT_LIVE=yes."""
+    from .broker import AgentError, agent, is_live
+    from .broker.database import Database
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
+    try:
+        print(f"Worked through {agent.send_queued(Database.connect(), is_live(), limit)} enquiries.")
+    except AgentError as e:
+        print(e)
+        return 1
+    return 0
+
+
+def agent_inbox() -> int:
+    """Read broker replies. Test mode unless AGENT_LIVE=yes."""
+    import anthropic
+
+    from .broker import AgentError, agent, is_live
+    from .broker.database import Database
+    from .broker.mailbox import Gmail
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", datefmt="%H:%M:%S")
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        print("Set ANTHROPIC_API_KEY first.")
+        return 1
+    try:
+        print(f"Handled {agent.read_inbox(Database.connect(), is_live(), Gmail.connect(), anthropic.Anthropic())} replies.")
+    except AgentError as e:
         print(e)
         return 1
     return 0

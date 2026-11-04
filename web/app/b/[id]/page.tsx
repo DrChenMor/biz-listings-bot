@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AgentCard } from "@/components/agent-card";
 import { Shell } from "@/components/shell";
 import { addNote, setNextStep, setStage } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
@@ -49,6 +50,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
           {b.description ? <section className="card"><h2>In their words</h2><div className="writing">{b.description.replace(/\*\*/g, "")}</div></section> : null}
         </div>
         <div className="stack">
+          {b.kind === "sale" ? <AgentCard business={b} /> : null}
           <section className="card"><h2>Stage</h2>
             <form action={setStage} className="actions">
               <input type="hidden" name="id" value={b.id} />

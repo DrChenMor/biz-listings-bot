@@ -50,6 +50,28 @@ export async function moveOn(form: FormData): Promise<void> {
   redirect("/pipeline");
 }
 
+export async function queueEnquiry(form: FormData): Promise<void> {
+  const who = await requireUser();
+  const id = String(form.get("id"));
+  const enquiries = db().from("enquiries");
+  const { error } = await enquiries.upsert({ business_id: id, asked_by: who }, { onConflict: "business_id", ignoreDuplicates: true });
+  if (error) throw new Error(error.message);
+  // Only a test run can be queued again: anything else may already have reached the broker.
+  await db().from("enquiries").update({ status: "Queued", detail: null, asked_by: who }).eq("business_id", id).eq("status", "Test only");
+  await saveTracking(id, { stage: "Approaching", owner: who });
+  await note(id, who, "Asked the agent to send the first enquiry");
+  redirect(link(id));
+}
+
+export async function cancelEnquiry(form: FormData): Promise<void> {
+  const who = await requireUser();
+  const id = String(form.get("id"));
+  const { error } = await db().from("enquiries").delete().eq("business_id", id).eq("status", "Queued");
+  if (error) throw new Error(error.message);
+  await note(id, who, "Took the enquiry back off the agent's list");
+  redirect(link(id));
+}
+
 export async function setNextStep(form: FormData): Promise<void> {
   const who = await requireUser();
   const id = String(form.get("id"));
