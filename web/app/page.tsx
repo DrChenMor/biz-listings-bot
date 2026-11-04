@@ -31,9 +31,9 @@ export default async function Today() {
       <h1>Today</h1>
       <p className="lede">Real data, copied from the Google Sheet.</p>
       <div className="stats">
-        <Link className="stat" href="/find?show=sale&area=all"><span className="statnum">{forSale.toLocaleString()}</span><span className="statlab">For sale in WA</span></Link>
+        <Link className="stat" href="/find?area=all"><span className="statnum">{forSale.toLocaleString()}</span><span className="statlab">For sale in WA</span></Link>
         <Link className="stat" href="/find?route=Private+seller&area=all"><span className="statnum">{privateSellers.toLocaleString()}</span><span className="statlab">Private sellers</span></Link>
-        <Link className="stat" href="/find?show=sale&area=all"><span className="statnum">{newThisWeek.toLocaleString()}</span><span className="statlab">New this week</span></Link>
+        <Link className="stat" href="/find?area=all&fresh=1"><span className="statnum">{newThisWeek.toLocaleString()}</span><span className="statlab">New this week</span></Link>
         <Link className="stat" href="/find?show=practice&area=all"><span className="statnum">{practices.toLocaleString()}</span><span className="statlab">Health practices</span></Link>
       </div>
       <div className="cards">
