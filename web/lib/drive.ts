@@ -55,10 +55,17 @@ export function filesIn(folderId: string): Promise<DriveFile[]> {
   return list(inside(folderId));
 }
 
+/** The Acquisitions folder's ID, or null when it isn't shared with the robot account. */
+export async function acquisitionsId(): Promise<string | null> {
+  const [root] = await list(`name = 'Acquisitions' and mimeType = '${FOLDER}' and trashed = false`);
+  return root?.id ?? null;
+}
+
 /** Every business's folder in Acquisitions, including the ones moved into Acquisitions/Passed. */
 export async function businessFolders(): Promise<DriveFolder[]> {
-  const [root] = await list(`name = 'Acquisitions' and mimeType = '${FOLDER}' and trashed = false`);
-  if (!root) return [];
+  const rootId = await acquisitionsId();
+  if (!rootId) return [];
+  const root = { id: rootId };
   const top = folders(await list(inside(root.id)));
   const passed = top.find((f) => f.name.trim().toLowerCase() === "passed");
   const gone = passed ? folders(await list(inside(passed.id))) : [];

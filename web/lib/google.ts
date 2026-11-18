@@ -80,6 +80,33 @@ async function accessToken(): Promise<string> {
   return (await tokenCall({ refresh_token: unseal(data.refresh_token), grant_type: "refresh_token" })).access_token;
 }
 
+export async function createFolder(parentId: string, name: string): Promise<string> {
+  const response = await fetch("https://www.googleapis.com/drive/v3/files?fields=id", {
+    method: "POST", cache: "no-store", headers: { Authorization: `Bearer ${await accessToken()}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name, mimeType: "application/vnd.google-apps.folder", parents: [parentId] }),
+  });
+  if (!response.ok) throw new Error(`Google Drive didn't make the folder (HTTP ${response.status}).`);
+  return (await response.json()).id;
+}
+
+/**
+ * Start an upload into a folder. The browser then sends the file straight to the returned address, so big files such
+ * as videos never pass through the website. `origin` is the website's address, which Google lets send the file.
+ */
+export async function startUpload(folderId: string, name: string, type: string, size: number, origin: string): Promise<string> {
+  const response = await fetch("https://www.googleapis.com/upload/drive/v3/files?uploadType=resumable&fields=id", {
+    method: "POST", cache: "no-store",
+    headers: {
+      Authorization: `Bearer ${await accessToken()}`, "Content-Type": "application/json; charset=UTF-8", Origin: origin,
+      "X-Upload-Content-Type": type || "application/octet-stream", "X-Upload-Content-Length": String(size),
+    },
+    body: JSON.stringify({ name, parents: [folderId] }),
+  });
+  const address = response.headers.get("location");
+  if (!response.ok || !address) throw new Error(`Google Drive didn't accept the upload (HTTP ${response.status}).`);
+  return address;
+}
+
 /**
  * Save HTML as a Google Doc in a folder, as the connected account. With an existing file's ID it updates that Doc
  * instead, unless it has been deleted. Returns the Doc's ID and link.

@@ -1,10 +1,12 @@
 "use server";
 
 import { randomUUID } from "node:crypto";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { endSession, passwordIsRight, requireUser, startSession } from "./auth";
 import { BY_HAND, db, link, NEXT_STAGE, PASSED, STAGES, today } from "./db";
-import { connection, disconnect, saveDoc } from "./google";
+import { acquisitionsId } from "./drive";
+import { connection, createFolder, disconnect, saveDoc, startUpload } from "./google";
 import { isKind, SHEETS, worksheetHtml } from "./worksheets";
 
 export async function signIn(form: FormData): Promise<void> {
@@ -127,6 +129,32 @@ export async function addFromFolder(form: FormData): Promise<void> {
   if (error) throw new Error(error.message);
   await moveTo(id, String(form.get("stage") || "Documents in"), who, { drive_folder_id: folder });
   redirect("/pipeline");
+}
+
+/** Make the business's folder in Acquisitions, as Tom, and link it. */
+export async function createDriveFolder(form: FormData): Promise<void> {
+  const who = await requireUser();
+  const id = String(form.get("id"));
+  const { data: business } = await db().from("businesses").select("name").eq("id", id).maybeSingle();
+  const root = await acquisitionsId();
+  if (!business || !root) throw new Error("The Acquisitions folder isn't shared with the website.");
+  const name = business.name.replace(/[\\/]+/g, "-").slice(0, 100).trim();
+  const folder = await createFolder(root, name);
+  await saveTracking(id, { drive_folder_id: folder });
+  await note(id, who, `Made the Drive folder ${name}`);
+  redirect(link(id));
+}
+
+/** Where the browser should send a file for the business's folder. */
+export async function beginUpload(id: string, name: string, type: string, size: number): Promise<string> {
+  const who = await requireUser();
+  const { data: tracked } = await db().from("tracking").select("drive_folder_id").eq("business_id", id).maybeSingle();
+  if (!tracked?.drive_folder_id) throw new Error("Link this business to its Drive folder first.");
+  const host = (await headers()).get("host") ?? "";
+  const origin = `${host.startsWith("localhost") ? "http" : "https"}://${host}`;
+  const address = await startUpload(tracked.drive_folder_id, name.replace(/[\\/]+/g, "-").slice(0, 200), type, size, origin);
+  await note(id, who, `Added ${name} to the Drive folder`);
+  return address;
 }
 
 export async function disconnectDrive(): Promise<void> {

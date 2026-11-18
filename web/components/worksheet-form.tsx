@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { saveWorksheet } from "@/lib/actions";
+import { saveWorksheet, saveWorksheetToDrive } from "@/lib/actions";
 import { Field, Kind, number, planTotal, SHEETS } from "@/lib/worksheets";
 
 type Data = Record<string, string>;
@@ -80,7 +80,7 @@ function Sums({ kind, data }: { kind: Kind; data: Data }) {
   );
 }
 
-export function WorksheetForm({ id, kind, initial, saved }: { id: string; kind: Kind; initial: Data; saved: boolean }) {
+export function WorksheetForm({ id, kind, initial, saved, inDrive }: { id: string; kind: Kind; initial: Data; saved: boolean; inDrive: boolean }) {
   const sheet = SHEETS[kind];
   const [data, setData] = useState(initial);
   const [status, setStatus] = useState(saved ? "Saved" : "Filled in from the listing. Not saved yet.");
@@ -106,11 +106,30 @@ export function WorksheetForm({ id, kind, initial, saved }: { id: string; kind: 
     setData((current) => ({ ...current, [key]: value }));
   };
 
+  /** Save what's on screen first, so the Doc never misses the last few seconds of typing. */
+  async function toDrive() {
+    setStatus("Saving to Drive…");
+    try {
+      await saveWorksheet(id, kind, data);
+      changed.current = false;
+      const form = new FormData();
+      form.set("id", id);
+      form.set("kind", kind);
+      await saveWorksheetToDrive(form);
+    } catch (e) {
+      if (e && typeof e === "object" && "digest" in e && String((e as { digest: unknown }).digest).startsWith("NEXT_REDIRECT")) throw e;
+      setStatus("Couldn't save to Drive. Try again in a minute.");
+    }
+  }
+
   return (
     <div className="wsheet">
       <div className="wbar noprint">
         <span className="lsub" role="status">{status}</span>
-        <button type="button" className="btn" onClick={() => window.print()}>Print or save as PDF</button>
+        <span className="actions">
+          <button type="button" className="btn" onClick={toDrive}>{inDrive ? "Update the copy in Drive" : "Save to Drive"}</button>
+          <button type="button" className="btn" onClick={() => window.print()}>Print or save as PDF</button>
+        </span>
       </div>
       <Sums kind={kind} data={data} />
       {sheet.sections.map((section) => (

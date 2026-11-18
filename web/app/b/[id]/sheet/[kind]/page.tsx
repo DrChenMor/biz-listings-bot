@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Shell } from "@/components/shell";
 import { WorksheetForm } from "@/components/worksheet-form";
-import { saveWorksheetToDrive } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 import { Business, dealCard, db, link, Tracking, when } from "@/lib/db";
 import { isKind, prefill, SHEETS } from "@/lib/worksheets";
@@ -40,11 +39,7 @@ export default async function Worksheet({ params, searchParams }: {
       <h1>{SHEETS[kind].title}</h1>
       <p className="lede">{b.name} · {SHEETS[kind].when}{sheet ? ` · last saved ${when(sheet.updated_at)} by ${sheet.updated_by}` : ""}</p>
       {shown ? <p className={`${shown[0]} noprint`} role="status">{shown[1]} {docLink ? <a href={docLink} target="_blank" rel="noreferrer">Open the Doc</a> : null}</p> : null}
-      <form action={saveWorksheetToDrive} className="noprint" style={{ marginBottom: 12 }}>
-        <input type="hidden" name="id" value={id} /><input type="hidden" name="kind" value={kind} />
-        <button type="submit" className="btn">{sheet?.drive_file_id ? "Update the copy in Drive" : "Save to Drive"}</button>
-      </form>
-      <WorksheetForm id={id} kind={kind} initial={initial} saved={Boolean(sheet)} />
+      <WorksheetForm id={id} kind={kind} initial={initial} saved={Boolean(sheet)} inDrive={Boolean(sheet?.drive_file_id)} />
     </Shell>
   );
 }
