@@ -4,6 +4,8 @@ import { randomUUID } from "node:crypto";
 import { redirect } from "next/navigation";
 import { endSession, passwordIsRight, requireUser, startSession } from "./auth";
 import { BY_HAND, db, link, NEXT_STAGE, PASSED, STAGES, today } from "./db";
+import { connection, disconnect, saveDoc } from "./google";
+import { isKind, SHEETS, worksheetHtml } from "./worksheets";
 
 export async function signIn(form: FormData): Promise<void> {
   const name = String(form.get("name") || "");
@@ -125,6 +127,39 @@ export async function addFromFolder(form: FormData): Promise<void> {
   if (error) throw new Error(error.message);
   await moveTo(id, String(form.get("stage") || "Documents in"), who, { drive_folder_id: folder });
   redirect("/pipeline");
+}
+
+export async function disconnectDrive(): Promise<void> {
+  await requireUser();
+  await disconnect();
+  redirect("/sources?drive=disconnected");
+}
+
+/** Save a worksheet as a Google Doc in the business's Drive folder, updating the Doc saved before if there is one. */
+export async function saveWorksheetToDrive(form: FormData): Promise<void> {
+  const who = await requireUser();
+  const id = String(form.get("id"));
+  const kind = String(form.get("kind"));
+  if (!isKind(kind)) throw new Error("Unknown worksheet");
+  const page = `${link(id)}/sheet/${kind}`;
+  const [{ data: business }, { data: tracked }, { data: sheet }] = await Promise.all([
+    db().from("businesses").select("name").eq("id", id).maybeSingle(),
+    db().from("tracking").select("drive_folder_id").eq("business_id", id).maybeSingle(),
+    db().from("worksheets").select("data, drive_file_id").eq("business_id", id).eq("kind", kind).maybeSingle(),
+  ]);
+  if (!tracked?.drive_folder_id) redirect(`${page}?drive=no-folder`);
+  if (!sheet) redirect(`${page}?drive=empty`);
+  if (!(await connection())) redirect(`${page}?drive=not-connected`);
+  const title = `${SHEETS[kind].title} - ${business?.name ?? id}`;
+  let saved: { id: string; link: string };
+  try {
+    saved = await saveDoc(tracked.drive_folder_id, title, worksheetHtml(kind, business?.name ?? id, sheet.data), sheet.drive_file_id);
+  } catch {
+    redirect(`${page}?drive=failed`);
+  }
+  await db().from("worksheets").update({ drive_file_id: saved.id }).eq("business_id", id).eq("kind", kind);
+  await note(id, who, `Saved the ${SHEETS[kind].title} to Drive`);
+  redirect(`${page}?drive=saved&doc=${encodeURIComponent(saved.link)}`);
 }
 
 export async function saveWorksheet(id: string, kind: string, data: Record<string, string>): Promise<string> {

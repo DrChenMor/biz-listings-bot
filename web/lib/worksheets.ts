@@ -91,6 +91,34 @@ export function number(value: string | undefined): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+const escape = (text: string) => text.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c] as string);
+const money = (text: string | undefined) => (text ? `$${number(text).toLocaleString("en-AU")}` : "");
+
+/** A filled-in worksheet as a simple HTML page, which Google Drive turns into a Doc. */
+export function worksheetHtml(kind: Kind, business: string, data: Record<string, string>): string {
+  const value = (key: string) => escape(data[key] ?? "");
+  const cell = (text: string, head = false) => `<${head ? "th" : "td"} style="border:1px solid #999;padding:4px 6px;text-align:left">${text}</${head ? "th" : "td"}>`;
+  const table = (heads: string[], rows: string[][]) => `<table style="border-collapse:collapse;width:100%">
+    <tr>${heads.map((h) => cell(h, true)).join("")}</tr>${rows.map((r) => `<tr>${r.map((c) => cell(c)).join("")}</tr>`).join("")}</table>`;
+  const parts = [`<h1>${escape(SHEETS[kind].title)}: ${escape(business)}</h1>`];
+  for (const section of SHEETS[kind].sections) {
+    parts.push(`<h2>${escape(section.title)}</h2>`);
+    const rows = section.fields.filter((f) => f.type === "row");
+    if (rows.length) parts.push(table(["", "Y/N", "Value", "Notes"], rows.map((f) => [escape(f.label), value(`${f.key}.yn`), f.type === "row" && f.money ? escape(money(data[`${f.key}.value`])) : "", value(`${f.key}.notes`)])));
+    for (const field of section.fields) {
+      if (field.type === "plan") {
+        const used = Array.from({ length: field.rows }, (_, i) => `${field.key}.${i}`).filter((k) => data[`${k}.name`] || data[`${k}.cash`]);
+        parts.push(table(["Strategy", "Used Y/N", "Cash impact", "Notes"], [...used.map((k) => [value(`${k}.name`), value(`${k}.used`), escape(money(data[`${k}.cash`])), value(`${k}.notes`)]),
+          ["<b>Total</b>", "", `<b>$${planTotal(data, field.key, field.rows).toLocaleString("en-AU")}</b>`, ""]]));
+      } else if (field.type !== "row") {
+        const shown = field.type === "money" ? escape(money(data[field.key])) : value(field.key).replace(/\n/g, "<br>");
+        parts.push(`<p><b>${escape(field.label)}:</b> ${shown}</p>`);
+      }
+    }
+  }
+  return `<html><head><meta charset="utf-8"></head><body>${parts.join("\n")}</body></html>`;
+}
+
 /** The total of a strategy table, counting every row not marked N. */
 export function planTotal(data: Record<string, string>, key: string, rows: number): number {
   let total = 0;
