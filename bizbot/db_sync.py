@@ -76,6 +76,7 @@ def same_business(rows: list[dict], keep: set[str]) -> dict[str, str]:
     numbers = [(_LISTING_NUMBER.findall(r["name"]) or [None])[0] for r in sale]
     repeats = Counter((r["site"], t) for r, t in zip(sale, titles))
     parent = list(range(len(sale)))
+    sites = [{r["site"]} for r in sale]  # one site never lists the same business twice
 
     def root(i: int) -> int:
         while parent[i] != i:
@@ -97,8 +98,10 @@ def same_business(rows: list[dict], keep: set[str]) -> dict[str, str]:
 
     for i, title in enumerate(titles):
         for _, _, j in process.extract(title, titles, scorer=fuzz.token_set_ratio, score_cutoff=90, limit=None):
-            if j > i and same(i, j):
-                parent[root(j)] = root(i)
+            a, b = root(i), root(j)
+            if j > i and a != b and not sites[a] & sites[b] and same(i, j):
+                parent[b] = a
+                sites[a] |= sites[b]
     groups: dict[int, list[dict]] = {}
     for i, row in enumerate(sale):
         groups.setdefault(root(i), []).append(row)
@@ -285,6 +288,7 @@ def _send(db: httpx.Client, path: str, rows: list[dict]) -> None:
         _check(db.post(path, json=rows, headers={"Prefer": "resolution=merge-duplicates,return=minimal"}))
 
 
-def _check(response: httpx.Response) -> None:
+def _check(response: httpx.Response) -> httpx.Response:
     if response.status_code >= 300:
         raise SheetError(f"The database refused the data (HTTP {response.status_code}): {response.text[:300]}")
+    return response

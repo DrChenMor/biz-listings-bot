@@ -72,3 +72,11 @@ def test_franchise_territories_must_share_a_suburb():
     rows = [listing("bsale:1", "bsale", "Black Optix Tint Franchise", 200000, "Joondalup"), listing("bsale:2", "bsale", "Black Optix Tint Franchise", 200000, "Rockingham"),
             listing("b2s:1", "business2sell", "Black Optix Tint Franchise", 200000, "Rockingham", "2026-11-03T08:00:00+08:00")]
     assert db_sync.same_business(rows, set()) == {"b2s:1": "bsale:2"}
+
+
+def test_a_group_never_holds_two_listings_from_one_site():
+    rows = [listing("cre:1", "commercialrealestate.com.au", "Fully Promoted Franchise Opportunity", 170000),
+            listing("bsale:1", "bsale", "Exclusive Fully Promoted Franchise Opportunity", 170000, first_seen="2026-11-02T08:00:00+08:00"),
+            listing("bsale:2", "bsale", "Fully Promoted Franchise Opportunity Premium", 170000, first_seen="2026-11-02T08:00:00+08:00")]
+    copies = db_sync.same_business(rows, set())
+    assert len(copies) == 1 and set(copies.values()) == {"cre:1"}
