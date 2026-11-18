@@ -1,10 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AgentCard } from "@/components/agent-card";
+import { DealCardForm } from "@/components/deal-card";
 import { Shell } from "@/components/shell";
-import { addNote, setNextStep, setStage } from "@/lib/actions";
+import { addNote, setNextStep } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
-import { Business, db, Fact, routeClass, STAGES, Tracking, when } from "@/lib/db";
+import { Business, BY_HAND, db, Fact, routeClass, Tracking, when } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -36,7 +37,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
       </div>
       {broker ? <p className="note">This listing stays with the broker. Contact goes through them.</p> : null}
       {b.route === "Needs a pharmacist" ? <p className="note warn">In WA, only pharmacists and certain companies and partnerships they control can own a pharmacy.</p> : null}
-      {b.on_sheet ? null : <p className="note warn">This business has left the Sheet, so it may be sold or gone.</p>}
+      {b.on_sheet || b.site === BY_HAND ? null : <p className="note warn">This business has left the Sheet, so it may be sold or gone.</p>}
       <div className="twocol">
         <div className="stack">
           <section className="card"><h2>What we know</h2>
@@ -50,14 +51,8 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
           {b.description ? <section className="card"><h2>In their words</h2><div className="writing">{b.description.replace(/\*\*/g, "")}</div></section> : null}
         </div>
         <div className="stack">
-          {b.kind === "sale" ? <AgentCard business={b} /> : null}
-          <section className="card"><h2>Stage</h2>
-            <form action={setStage} className="actions">
-              <input type="hidden" name="id" value={b.id} />
-              <select name="stage" aria-label="Stage" defaultValue={tracking?.stage ?? "New"}>{[...STAGES, "Passed"].map((s) => <option key={s}>{s}</option>)}</select>
-              <button type="submit" className="btn">{tracking ? "Save" : "Add to pipeline"}</button>
-            </form>
-          </section>
+          <DealCardForm business={b} tracking={tracking} />
+          {b.kind === "sale" && b.site !== BY_HAND ? <AgentCard business={b} /> : null}
           <section className="card"><h2>Next step</h2>
             <form action={setNextStep} className="stack">
               <input type="hidden" name="id" value={b.id} />

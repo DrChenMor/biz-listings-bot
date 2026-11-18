@@ -1,7 +1,17 @@
 import { createClient } from "@supabase/supabase-js";
 
-export const STAGES = ["New", "Researching", "Approaching", "Talking", "NDA and numbers", "Offer"];
-export const LAST_STAGE = "Offer";
+/** The deal flow, in order. Passed sits outside it. */
+export const STAGES = ["Shortlist", "Approached", "NDA signed", "Documents in", "First meet", "Deal analysis", "Pitch / offer",
+  "Term sheet", "Due diligence", "Deal re-work", "Deal closed", "Completion"];
+export const PASSED = "Passed";
+
+/** Where Move on takes a business. Due diligence that goes well closes the deal; a re-worked deal is pitched again. */
+export const NEXT_STAGE: Record<string, string> = Object.fromEntries(STAGES.slice(0, -1).map((stage, i) => [stage, STAGES[i + 1]]));
+NEXT_STAGE["Due diligence"] = "Deal closed";
+NEXT_STAGE["Deal re-work"] = "Pitch / offer";
+
+/** Businesses added straight into the pipeline, not found by a bot. */
+export const BY_HAND = "Added by hand";
 
 /** Server only: this key can read everything, so it never reaches the browser. */
 export function db() {
@@ -21,7 +31,35 @@ export type Business = {
   url: string | null; map_url: string | null; description: string | null; facts: Fact[]; first_seen: string | null; on_sheet: boolean;
 };
 
-export type Tracking = { business_id: string; stage: string; next_step: string | null; next_due: string | null; owner: string | null };
+export type Tracking = {
+  business_id: string; stage: string; next_step: string | null; next_due: string | null; owner: string | null;
+  location: string | null; product: string | null; selling_reason: string | null; asking_price: number | null; turnover: number | null;
+  expenses: number | null; profit: number | null; under_management: string | null; approached_on: string | null; followed_up_on: string | null;
+};
+
+export type Card = {
+  location: string; product: string; sellingReason: string; asking: number | null; turnover: number | null;
+  expenses: number | null; profit: number | null; underManagement: string;
+};
+
+/** What a pipeline card shows: what was typed in, or else what the listing said. */
+export function dealCard(b: Business, t: Tracking | null): Card {
+  return {
+    location: t?.location || b.suburb || "",
+    product: t?.product || b.category || b.types[0] || "",
+    sellingReason: t?.selling_reason || b.facts.find((f) => f.label === "Reason for sale")?.value || "",
+    asking: t?.asking_price ?? b.price,
+    turnover: t?.turnover ?? b.turnover,
+    expenses: t?.expenses ?? null,
+    profit: t?.profit ?? b.profit,
+    underManagement: t?.under_management || "",
+  };
+}
+
+/** Today's date in Perth, as the database stores dates. */
+export function today(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Australia/Perth" });
+}
 
 export const AGENT_SITES = ["bsale", "business2sell", "AnyBusiness", "businessforsale.com.au", "No Agent Business"];
 

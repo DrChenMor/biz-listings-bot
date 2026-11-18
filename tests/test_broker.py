@@ -210,7 +210,7 @@ def test_documents_are_filed_and_evaluated(monkeypatch):
     monkeypatch.setattr(reader, "evaluate", lambda client, business, files: seen.update(files=[n for n, _ in files]) or verdict)
     agent.handle_mail(db, reply_with("im.pdf"), enquiry, SendingMailbox(), None, TEST_BUYER, live=False)
     assert enquiry["status"] == "Evaluated" and seen["files"] == ["im.pdf"]
-    assert db.saved["evaluations"]["summary"] == verdict and db.saved["tracking"]["stage"] == "NDA and numbers"
+    assert db.saved["evaluations"]["summary"] == verdict and db.saved["tracking"]["stage"] == "Documents in"
 
 
 @pytest.mark.parametrize("kind, link_only, status", [("declined", False, "Closed"), ("question", False, "Needs you"), ("nda", True, "Needs you"), ("auto_reply", False, "Sent")])

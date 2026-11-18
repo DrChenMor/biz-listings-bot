@@ -155,5 +155,5 @@ def _evaluate(db: Database, enquiry: dict, business: dict, claude, signing) -> N
         raise AgentError("The reply had information, but no file to evaluate.")
     summary = reader.evaluate(claude, business, files)
     db.save("evaluations", {"business_id": business["id"], "enquiry_id": enquiry["id"], "summary": summary, "model": reader.EVALUATOR_MODEL}, "business_id")
-    db.save("tracking", {"business_id": business["id"], "stage": "NDA and numbers"}, "business_id")
+    db.save("tracking", {"business_id": business["id"], "stage": "Documents in"}, "business_id")
     db.set_status(enquiry, "Evaluated", f"{summary['verdict']}: {summary['headline']}")
