@@ -9,7 +9,7 @@ import { isKind, SHEETS, worksheetHtml } from "./worksheets";
 
 export async function signIn(form: FormData): Promise<void> {
   const name = String(form.get("name") || "");
-  if (!["Chen", "Partner"].includes(name) || !passwordIsRight(String(form.get("password") || ""))) {
+  if (!["Chen", "Tom"].includes(name) || !passwordIsRight(String(form.get("password") || ""))) {
     await new Promise((resolve) => setTimeout(resolve, 800));
     redirect("/login?wrong=1");
   }

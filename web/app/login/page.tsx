@@ -10,7 +10,7 @@ export default async function Login({ searchParams }: { searchParams: Promise<{ 
         <label className="field">Who are you?
           <select name="name" defaultValue="Chen">
             <option>Chen</option>
-            <option>Partner</option>
+            <option>Tom</option>
           </select>
         </label>
         <label className="field">Password
