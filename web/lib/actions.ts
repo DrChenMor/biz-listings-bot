@@ -103,6 +103,30 @@ export async function addBusiness(form: FormData): Promise<void> {
   redirect(link(id));
 }
 
+const folderId = (value: FormDataEntryValue | null) => String(value ?? "").replace(/[^\w-]/g, "") || null;
+
+export async function linkFolder(form: FormData): Promise<void> {
+  const who = await requireUser();
+  const id = String(form.get("id"));
+  const folder = folderId(form.get("folder"));
+  await saveTracking(id, { drive_folder_id: folder });
+  await note(id, who, folder ? `Linked the Drive folder ${String(form.get("folder_name") || "")}`.trim() : "Unlinked the Drive folder");
+  redirect(String(form.get("back") || link(id)));
+}
+
+/** A Drive folder whose business isn't in the pipeline yet becomes a business added by hand. */
+export async function addFromFolder(form: FormData): Promise<void> {
+  const who = await requireUser();
+  const folder = folderId(form.get("folder"));
+  const name = words(form.get("folder_name"));
+  if (!folder || !name) redirect("/pipeline");
+  const id = `manual:${randomUUID().slice(0, 8)}`;
+  const { error } = await db().from("businesses").insert({ id, kind: "sale", site: BY_HAND, status: "Available", name, route: "Direct", search_text: name.toLowerCase() });
+  if (error) throw new Error(error.message);
+  await moveTo(id, String(form.get("stage") || "Documents in"), who, { drive_folder_id: folder });
+  redirect("/pipeline");
+}
+
 export async function saveWorksheet(id: string, kind: string, data: Record<string, string>): Promise<string> {
   const who = await requireUser();
   if (!["review", "analysis", "bundle"].includes(kind)) throw new Error("Unknown worksheet");

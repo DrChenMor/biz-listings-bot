@@ -35,6 +35,7 @@ export type Tracking = {
   business_id: string; stage: string; next_step: string | null; next_due: string | null; owner: string | null;
   location: string | null; product: string | null; selling_reason: string | null; asking_price: number | null; turnover: number | null;
   expenses: number | null; profit: number | null; under_management: string | null; approached_on: string | null; followed_up_on: string | null;
+  drive_folder_id: string | null;
 };
 
 export type Card = {

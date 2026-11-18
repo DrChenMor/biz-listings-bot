@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { Shell } from "@/components/shell";
-import { addBusiness, followedUp, moveOn, setStage } from "@/lib/actions";
+import { addBusiness, addFromFolder, followedUp, linkFolder, moveOn, setStage } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 import { Business, dealCard, db, link, money, NEXT_STAGE, PASSED, STAGES, Tracking, when } from "@/lib/db";
+import { businessFolders, driveReady, DriveFolder, folderLink } from "@/lib/drive";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +36,7 @@ function DealCard({ row }: { row: Row }) {
         {row.followed_up_on ? ` · followed up ${when(row.followed_up_on)}` : ""}
       </p>
       {row.next_step ? <p className="dline"><b>Next:</b> {row.next_step}{row.next_due ? ` (by ${when(row.next_due)})` : ""}</p> : null}
+      {row.drive_folder_id ? <a className="dline" href={folderLink(row.drive_folder_id)} target="_blank" rel="noreferrer">Drive folder</a> : null}
       <div className="dbuttons">
         {next ? (
           <form action={moveOn}><input type="hidden" name="id" value={b.id} /><input type="hidden" name="stage" value={row.stage} />
@@ -59,6 +61,14 @@ export default async function Pipeline() {
   if (error) throw new Error(error.message);
   const rows = (data ?? []) as unknown as Row[];
   const passed = rows.filter((r) => r.stage === PASSED);
+  const linked = new Set(rows.map((r) => r.drive_folder_id));
+  let unlinked: DriveFolder[] = [];
+  try {
+    if (driveReady()) unlinked = (await businessFolders()).filter((f) => !linked.has(f.id));
+  } catch {
+    unlinked = [];  // Drive having a bad moment shouldn't stop the pipeline from showing.
+  }
+  const working = rows.filter((r) => r.stage !== PASSED && !r.drive_folder_id);
 
   return (
     <Shell user={user} active="/pipeline">
@@ -79,6 +89,35 @@ export default async function Pipeline() {
           </section>
         ) : null;
       })}
+      {unlinked.length ? (
+        <section className="stagesec card">
+          <h2>Drive folders not linked yet ({unlinked.length})</h2>
+          <p className="lsub">Folders in Acquisitions. Link each one to its business, or add it to the pipeline as a new business.</p>
+          {unlinked.map((folder) => (
+            <div className="item folderrow" key={folder.id}>
+              <a className="ltitle" href={folderLink(folder.id)} target="_blank" rel="noreferrer">{folder.name}{folder.passed ? " (Passed)" : ""}</a>
+              {working.length ? (
+                <form action={linkFolder} className="actions">
+                  <input type="hidden" name="folder" value={folder.id} /><input type="hidden" name="folder_name" value={folder.name} />
+                  <input type="hidden" name="back" value="/pipeline" />
+                  <select name="id" aria-label={`Business for ${folder.name}`} defaultValue="">
+                    <option value="" disabled>It's this business…</option>
+                    {working.map((r) => <option key={r.business_id} value={r.business_id}>{r.businesses.name.slice(0, 70)}</option>)}
+                  </select>
+                  <button type="submit" className="btn">Link</button>
+                </form>
+              ) : null}
+              <form action={addFromFolder} className="actions">
+                <input type="hidden" name="folder" value={folder.id} /><input type="hidden" name="folder_name" value={folder.name} />
+                <select name="stage" aria-label={`Stage for ${folder.name}`} defaultValue={folder.passed ? PASSED : "Documents in"}>
+                  {[...STAGES, PASSED].map((s) => <option key={s}>{s}</option>)}
+                </select>
+                <button type="submit" className="btn">Add as new business</button>
+              </form>
+            </div>
+          ))}
+        </section>
+      ) : null}
       {rows.length === passed.length ? <p className="note">Nothing in the pipeline yet. Open a business in Find and give it a stage.</p> : null}
       <details className="more stagesec">
         <summary>Add a business that isn't listed</summary>

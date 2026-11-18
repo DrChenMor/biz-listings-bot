@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AgentCard } from "@/components/agent-card";
 import { DealCardForm } from "@/components/deal-card";
+import { DriveCard } from "@/components/drive-card";
 import { Shell } from "@/components/shell";
 import { addNote, setNextStep } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
@@ -52,6 +53,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
         </div>
         <div className="stack">
           <DealCardForm business={b} tracking={tracking} />
+          <DriveCard business={b} tracking={tracking} />
           {b.kind === "sale" && b.site !== BY_HAND ? <AgentCard business={b} /> : null}
           <section className="card"><h2>Next step</h2>
             <form action={setNextStep} className="stack">
