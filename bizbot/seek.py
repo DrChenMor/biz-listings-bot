@@ -56,6 +56,7 @@ WATCHED = {"status": "Status", "title": "Title", "price_text": "Asking price", "
 
 _BOOKMARKLET = re.compile(r"^function seekBookmarklet\(.*?^\}$", re.M | re.S)
 _CHECK_PAGE = re.compile(r"just a moment|performing security verification|attention required|verify you are human", re.I)
+_GONE_PAGE = re.compile(r"page not found|no longer available|listing (has )?(expired|been removed)", re.I)
 
 
 class SecurityCheck(Exception):
@@ -97,6 +98,12 @@ def run(cfg: Config, store, limit: int | None = None, jitter: bool = False) -> l
                         if row.get("location"):
                             raw = {k: v for k, v in raw.items() if k != "location"}
                         _save(cfg, rows, raw, stamp, changes, stats)
+                # Alerts and the first result pages never say when a listing ends, so open the saved listings
+                # checked longest ago and mark the ones SEEK no longer has.
+                live = sorted((r for r in rows.values() if r.get("status") != "Removed" and r.get("url")), key=lambda r: r.get("last_seen") or "")
+                for row in live[: cfg.seek.recheck]:
+                    _pause(cfg)
+                    recheck(page, row, stamp, changes, stats)
             except SecurityCheck as e:
                 log.error("%s", e)
                 stats["result"] = str(e)
@@ -191,6 +198,21 @@ def _read(page, url: str, reader: str, stats: dict) -> list[dict]:
         raise SecurityCheck(f"SEEK showed a security check at {url}; stopped without trying to get past it")
     payload = page.evaluate(reader) or {}
     return payload.get("listings") or []
+
+
+def recheck(page, row: dict, stamp: str, changes: list, stats: dict) -> None:
+    """Open a saved listing: if SEEK says the page is gone, the listing has ended."""
+    response = page.goto(row["url"], wait_until="domcontentloaded", timeout=60_000)
+    page.wait_for_timeout(1_500)
+    stats["fetched"] += 1
+    if (response and response.status in (403, 429)) or _CHECK_PAGE.search(page.title()):
+        raise SecurityCheck(f"SEEK showed a security check at {row['url']}; stopped without trying to get past it")
+    if (response and response.status in (404, 410)) or _GONE_PAGE.search(page.title()):
+        _record(changes, row, stamp, "Status", row.get("status", ""), "Removed")
+        row.update(status="Removed", last_changed=stamp)
+        stats["removed"] += 1
+    else:
+        row["last_seen"] = stamp
 
 
 def _save(cfg: Config, rows: dict, raw: dict, stamp: str, changes: list, stats: dict) -> None:

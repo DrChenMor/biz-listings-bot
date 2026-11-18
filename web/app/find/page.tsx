@@ -35,7 +35,7 @@ export default async function Find({ searchParams }: { searchParams: Promise<Sea
   const suburb = (s.suburb ?? "").trim().replace(/[%_,()]/g, " ");
 
   let query = db().from("businesses").select("id, kind, site, status, name, types, suburb, price_text, route, tags, first_seen, turnover, profit", { count: "exact" })
-    .eq("on_sheet", true).neq("status", "Removed");
+    .eq("on_sheet", true).neq("status", "Removed").is("same_as", null);
   if (show !== "all") query = query.eq("kind", show);
   if (routes.length) query = query.in("route", routes);
   if (types.length) query = query.overlaps("types", types);

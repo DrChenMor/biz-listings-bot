@@ -6,7 +6,7 @@ import { db, link, when } from "@/lib/db";
 export const dynamic = "force-dynamic";
 
 async function count(filter: (q: any) => any): Promise<number> {
-  const { count: total, error } = await filter(db().from("businesses").select("id", { count: "exact", head: true }).eq("on_sheet", true));
+  const { count: total, error } = await filter(db().from("businesses").select("id", { count: "exact", head: true }).eq("on_sheet", true).is("same_as", null));
   if (error) throw new Error(error.message);
   return total ?? 0;
 }

@@ -23,6 +23,7 @@ class SeekConfig:
     pages: int
     details: int
     delay_seconds: tuple[float, float]
+    recheck: int = 15
 
 
 @dataclass
@@ -70,6 +71,7 @@ def load(path: Path = ROOT / "config.toml") -> Config:
             pages=seek["pages"],
             details=seek["details"],
             delay_seconds=tuple(seek["delay_seconds"]),
+            recheck=seek.get("recheck", 15),
         ),
         health=HealthConfig(
             suburbs=[s.lower() for s in health["suburbs"]],

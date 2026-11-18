@@ -6,9 +6,11 @@ Sheet stays in the database marked as off the Sheet, so anything tracked in the 
 import logging
 import os
 import re
+from collections import Counter
 from datetime import datetime, timezone
 
 import httpx
+from rapidfuzz import fuzz, process
 
 from .config import Config
 from .health import HEALTH
@@ -20,6 +22,8 @@ from .store import LISTINGS, SheetError
 log = logging.getLogger(__name__)
 
 BATCH = 500
+_LISTING_NUMBER = re.compile(r"\b\d{5}\b")
+_COMMON_WORDS = {"for", "sale", "business", "wa", "perth", "the", "a", "and", "in", "of"}
 SITE_NAMES = {
     "bsale": "bsale", "business2sell": "business2sell", "anybusiness": "AnyBusiness", "businessforsale": "businessforsale.com.au",
     "noagentbusiness": "No Agent Business",
@@ -38,12 +42,77 @@ def sync(cfg: Config, store) -> int:
     rows += [seek_row(r) for r in store.load(SEEK).values()]
     rows += [practice_row(cfg, r) for r in store.load(HEALTH).values()]
     with httpx.Client(base_url=f"{url}/rest/v1", timeout=60, headers={"apikey": key, "Authorization": f"Bearer {key}"}) as db:
+        tracked = {t["business_id"] for t in _check(db.get("/tracking", params={"select": "business_id"})).json()}
+        mark_copies(rows, tracked)
         for start in range(0, len(rows), BATCH):
             _send(db, "/businesses?on_conflict=id", [{**row, "on_sheet": True, "synced_at": started} for row in rows[start: start + BATCH]])
         _check(db.patch("/businesses", params={"synced_at": f"lt.{started}"}, json={"on_sheet": False}))
         _send(db, "/site_runs?on_conflict=site", latest_runs(store))
     log.info("Sent %d businesses to the database", len(rows))
     return len(rows)
+
+
+def mark_copies(rows: list[dict], keep: set[str]) -> None:
+    """The same business on more than one site is shown once: each copy gets same_as, the shown one gets also_on."""
+    shown = same_business(rows, keep)
+    by_id = {row["id"]: row for row in rows}
+    for row in rows:
+        row["same_as"], row["also_on"] = shown.get(row["id"]), []
+    for copy, main in shown.items():
+        by_id[main]["also_on"].append({"site": by_id[copy]["site"], "url": by_id[copy]["url"], "id": copy})
+    for row in rows:
+        row["tags"] = row["tags"] + [f"Also on {copy['site']}" for copy in row["also_on"]]
+
+
+def same_business(rows: list[dict], keep: set[str]) -> dict[str, str]:
+    """Listings that are the same business as one on another site: copy's id -> the id of the listing to show.
+
+    The same listing number means the same business, and different numbers mean different ones. Otherwise the title
+    must match closely and the price too, when both have one. A title a site uses more than once is a franchise with
+    one listing per territory, so those must also be in the same suburb. A business in the pipeline is always the one shown.
+    """
+    sale = [r for r in rows if r["kind"] == "sale" and r["status"] != "Removed"]
+    titles = [_plain_title(r["name"]) for r in sale]
+    numbers = [(_LISTING_NUMBER.findall(r["name"]) or [None])[0] for r in sale]
+    repeats = Counter((r["site"], t) for r, t in zip(sale, titles))
+    parent = list(range(len(sale)))
+
+    def root(i: int) -> int:
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    def same(i: int, j: int) -> bool:
+        a, b = sale[i], sale[j]
+        if a["site"] == b["site"] or not titles[i]:
+            return False
+        if numbers[i] and numbers[j]:
+            return numbers[i] == numbers[j]
+        if a["price"] and b["price"] and abs(a["price"] - b["price"]) > max(1000, 0.02 * max(a["price"], b["price"])):
+            return False
+        if repeats[(a["site"], titles[i])] > 1 or repeats[(b["site"], titles[j])] > 1:
+            return bool(a["suburb"]) and (a["suburb"] or "").lower() == (b["suburb"] or "").lower()
+        return True
+
+    for i, title in enumerate(titles):
+        for _, _, j in process.extract(title, titles, scorer=fuzz.token_set_ratio, score_cutoff=90, limit=None):
+            if j > i and same(i, j):
+                parent[root(j)] = root(i)
+    groups: dict[int, list[dict]] = {}
+    for i, row in enumerate(sale):
+        groups.setdefault(root(i), []).append(row)
+    copies = {}
+    for group in (g for g in groups.values() if len(g) > 1):
+        main = min(group, key=lambda r: (r["id"] not in keep, r["first_seen"] or "9999", r["id"]))
+        copies.update({r["id"]: main["id"] for r in group if r is not main})
+    return copies
+
+
+def _plain_title(title: str) -> str:
+    """A title without listing numbers, punctuation and words every listing uses, for comparing."""
+    text = re.sub(r"[^a-z0-9 ]+", " ", _LISTING_NUMBER.sub(" ", title.lower()))
+    return " ".join(w for w in text.split() if w not in _COMMON_WORDS)
 
 
 def latest_runs(store) -> list[dict]:
@@ -173,7 +242,7 @@ def seller_route(seller: str) -> str:
 def _common(r: dict) -> dict:
     row = {"id": r["key"], "status": r.get("status"), "first_seen": _when(r.get("first_seen"))}
     for field in ("summary", "types", "category", "suburb", "postcode", "region", "perth", "price_text", "price", "turnover", "profit", "route",
-                  "tags", "seller", "phone", "email", "website", "address", "url", "map_url", "description", "facts", "search_text"):
+                  "tags", "seller", "phone", "email", "website", "address", "url", "map_url", "description", "facts", "search_text", "same_as", "also_on"):
         row[field] = None
     return row
 

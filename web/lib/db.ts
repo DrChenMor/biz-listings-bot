@@ -29,6 +29,7 @@ export type Business = {
   price_text: string | null; price: number | null; turnover: number | null; profit: number | null; route: string; tags: string[];
   seller: string | null; phone: string | null; email: string | null; website: string | null; address: string | null;
   url: string | null; map_url: string | null; description: string | null; facts: Fact[]; first_seen: string | null; on_sheet: boolean;
+  same_as: string | null; also_on: { site: string; url: string | null; id: string }[];
 };
 
 export type Tracking = {

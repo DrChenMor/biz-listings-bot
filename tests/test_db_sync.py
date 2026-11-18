@@ -32,3 +32,43 @@ def test_every_row_sends_the_same_columns():
 
 def test_seek_price_of_one_dollar_is_not_a_price():
     assert db_sync.seek_row({"key": "seek:1", "price_aud": 1})["price"] is None
+
+
+def listing(id, site, name, price=None, suburb="", first_seen="2026-11-01T08:00:00+08:00"):
+    return {"id": id, "kind": "sale", "status": "Active", "site": site, "name": name, "price": price, "suburb": suburb,
+            "first_seen": first_seen, "url": f"https://{site}/{id}", "tags": [f"On {site}"]}
+
+
+def test_the_same_listing_on_two_sites_is_shown_once():
+    rows = [listing("bsale:1", "bsale", "Turnkey Carpet Cleaning Business For Sale", 59000, first_seen="2026-11-02T08:00:00+08:00"),
+            listing("cre:1", "commercialrealestate.com.au", "Turnkey carpet cleaning business for sale", 59000)]
+    db_sync.mark_copies(rows, set())
+    assert rows[0]["same_as"] == "cre:1" and rows[1]["same_as"] is None
+    assert rows[1]["also_on"] == [{"site": "bsale", "url": "https://bsale/bsale:1", "id": "bsale:1"}]
+    assert "Also on bsale" in rows[1]["tags"]
+
+
+def test_a_business_in_the_pipeline_is_the_one_shown():
+    rows = [listing("bsale:1", "bsale", "Turnkey Carpet Cleaning", 59000), listing("b2s:1", "business2sell", "Turnkey Carpet Cleaning", 59000, first_seen="2026-11-05T08:00:00+08:00")]
+    assert db_sync.same_business(rows, {"b2s:1"}) == {"bsale:1": "b2s:1"}
+
+
+def test_different_listing_numbers_are_different_businesses():
+    rows = [listing("seek:1", "SEEK Business", "36477 Established Beauty Clinic", 250000), listing("bsale:1", "bsale", "36662 Established Beauty Clinic", 250000)]
+    assert db_sync.same_business(rows, set()) == {}
+
+
+def test_the_same_listing_number_is_the_same_business_even_with_another_title():
+    rows = [listing("bsale:1", "bsale", "37081 - Agritourism Booking Platform With National Reach"), listing("cre:1", "commercialrealestate.com.au", "37081 - Agritourism Booking Platform, National")]
+    assert db_sync.same_business(rows, set()) == {"cre:1": "bsale:1"}
+
+
+def test_a_different_price_is_a_different_business():
+    rows = [listing("bsale:1", "bsale", "Established Hair Salon", 90000), listing("b2s:1", "business2sell", "Established Hair Salon", 150000)]
+    assert db_sync.same_business(rows, set()) == {}
+
+
+def test_franchise_territories_must_share_a_suburb():
+    rows = [listing("bsale:1", "bsale", "Black Optix Tint Franchise", 200000, "Joondalup"), listing("bsale:2", "bsale", "Black Optix Tint Franchise", 200000, "Rockingham"),
+            listing("b2s:1", "business2sell", "Black Optix Tint Franchise", 200000, "Rockingham", "2026-11-03T08:00:00+08:00")]
+    assert db_sync.same_business(rows, set()) == {"b2s:1": "bsale:2"}

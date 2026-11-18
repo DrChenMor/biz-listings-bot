@@ -54,6 +54,8 @@ searches = [
 pages = 3
 # Listing pages to open per run for the full description and phone numbers (newest first).
 details = 10
+# Saved listings to open again each run, oldest check first, to find the ones that have ended.
+recheck = 15
 # Random pause between pages, in seconds.
 delay_seconds = [5, 12]
 

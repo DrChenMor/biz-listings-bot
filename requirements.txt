@@ -3,3 +3,4 @@ beautifulsoup4>=4.12
 lxml>=5.0
 gspread>=6.0
 tzdata
+rapidfuzz>=3.9

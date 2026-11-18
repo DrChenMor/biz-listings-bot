@@ -22,6 +22,7 @@ function DealCard({ row }: { row: Row }) {
   return (
     <article className="dcard">
       <Link href={link(b.id)} className="dname">{b.name}</Link>
+      {b.status === "Removed" ? <span className="pill r-stop">Listing ended</span> : null}
       <span className="lsub">{[card.location, card.product].filter(Boolean).join(" · ")}</span>
       <dl className="dfacts">
         <Figure label="Asking" value={card.asking} />

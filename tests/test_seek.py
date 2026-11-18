@@ -75,3 +75,41 @@ def test_page_urls_and_reader_code():
     assert seek._page_url(search, 3).endswith("?rad=50&sort=1&pg=3")
     source = seek.bookmarklet_source()
     assert source.startswith("function seekBookmarklet(") and source.rstrip().endswith("}")
+
+
+class Page:
+    """Just enough of a browser page for recheck."""
+
+    def __init__(self, status, title):
+        self.status, self._title = status, title
+
+    def goto(self, url, **kwargs):
+        return type("Response", (), {"status": self.status})()
+
+    def wait_for_timeout(self, ms):
+        pass
+
+    def title(self):
+        return self._title
+
+
+def rechecked(status, title):
+    row, changes, counts = {"key": "seek:1", "url": "https://seek.example/1", "status": "Active", "last_seen": "2026-11-01 08:00"}, [], dict(removed=0, fetched=0)
+    seek.recheck(Page(status, title), row, "2026-11-18 09:00", changes, counts)
+    return row, changes, counts
+
+
+def test_a_listing_seek_no_longer_has_is_marked_removed():
+    row, changes, counts = rechecked(404, "Page Not Found")
+    assert row["status"] == "Removed" and counts["removed"] == 1 and changes
+
+
+def test_a_live_listing_is_marked_as_seen():
+    row, changes, counts = rechecked(200, "Hair Salon in Perth - SEEK Business")
+    assert (row["status"], row["last_seen"], changes) == ("Active", "2026-11-18 09:00", [])
+
+
+def test_a_security_check_stops_the_recheck():
+    import pytest
+    with pytest.raises(seek.SecurityCheck):
+        rechecked(403, "Just a moment...")

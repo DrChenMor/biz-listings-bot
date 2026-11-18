@@ -6,7 +6,7 @@ import { DriveCard } from "@/components/drive-card";
 import { Shell } from "@/components/shell";
 import { addNote, setNextStep } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
-import { Business, BY_HAND, db, Fact, routeClass, Tracking, when } from "@/lib/db";
+import { Business, BY_HAND, db, Fact, link, routeClass, Tracking, when } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -36,6 +36,8 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
           {b.map_url ? <a className="btn" href={b.map_url} target="_blank" rel="noreferrer">Map</a> : null}
         </div>
       </div>
+      {b.same_as ? <p className="note">This is the same business as <Link href={link(b.same_as)}>another listing</Link>, which is the one shown in Find.</p> : null}
+      {b.also_on?.length ? <p className="note">Also listed on {b.also_on.map((c, i) => <span key={c.id}>{i ? ", " : ""}{c.url ? <a href={c.url} target="_blank" rel="noreferrer">{c.site}</a> : c.site}</span>)}.</p> : null}
       {broker ? <p className="note">This listing stays with the broker. Contact goes through them.</p> : null}
       {b.route === "Needs a pharmacist" ? <p className="note warn">In WA, only pharmacists and certain companies and partnerships they control can own a pharmacy.</p> : null}
       {b.on_sheet || b.site === BY_HAND ? null : <p className="note warn">This business has left the Sheet, so it may be sold or gone.</p>}
