@@ -73,6 +73,21 @@ export async function businessFolders(): Promise<DriveFolder[]> {
     ...gone.map((f) => ({ id: f.id, name: f.name, passed: true }))];
 }
 
+/** A folder's name in Drive, or null when the robot account can't see it. */
+export async function folderName(id: string): Promise<string | null> {
+  const response = await fetch(`https://www.googleapis.com/drive/v3/files/${id.replace(/[^\w-]/g, "")}?fields=name`, {
+    headers: { Authorization: `Bearer ${await accessToken()}` }, cache: "no-store",
+  });
+  return response.ok ? ((await response.json()).name as string) : null;
+}
+
+/** The ID of Acquisitions/Passed, where Tom keeps the folders of businesses he passed on. */
+export async function passedId(): Promise<string | null> {
+  const rootId = await acquisitionsId();
+  if (!rootId) return null;
+  return folders(await list(inside(rootId))).find((f) => f.name.trim().toLowerCase() === "passed")?.id ?? null;
+}
+
 export function folderLink(id: string): string {
   return `https://drive.google.com/drive/folders/${id}`;
 }

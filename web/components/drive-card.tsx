@@ -1,5 +1,5 @@
 import { createDriveFolder, linkFolder } from "@/lib/actions";
-import { Business, Tracking, when } from "@/lib/db";
+import { Business, nameOf, Tracking, when } from "@/lib/db";
 import { businessFolders, driveReady, DriveFile, DriveFolder, filesIn, folderLink, kindOf } from "@/lib/drive";
 import { connection } from "@/lib/google";
 import { DriveUpload } from "./drive-upload";
@@ -46,12 +46,14 @@ export async function DriveCard({ business, tracking }: { business: Business; tr
               <button type="submit" className="btn">Link</button>
             </form>
           ) : problem ? null : <p className="lsub">No folders in Acquisitions yet.</p>}
-          {connected ? (
-            <form action={createDriveFolder} className="actions" style={{ marginTop: 8 }}>
+          {connected ? (<>
+            <form action={createDriveFolder} className="actions folderrow" style={{ marginTop: 8 }}>
               <input type="hidden" name="id" value={business.id} />
+              <input className="input" name="name" aria-label="Name of the new folder" defaultValue={nameOf(business, tracking)} style={{ flex: "1 1 200px" }} />
               <button type="submit" className="btn">Make a new folder for it</button>
             </form>
-          ) : null}
+            <p className="lsub">The folder's name becomes the business's name on the website.</p>
+          </>) : null}
         </>
       )}
     </section>

@@ -36,8 +36,13 @@ export type Tracking = {
   business_id: string; stage: string; next_step: string | null; next_due: string | null; owner: string | null;
   location: string | null; product: string | null; selling_reason: string | null; asking_price: number | null; turnover: number | null;
   expenses: number | null; profit: number | null; under_management: string | null; approached_on: string | null; followed_up_on: string | null;
-  drive_folder_id: string | null;
+  drive_folder_id: string | null; display_name: string | null; archived_at: string | null; archived_by: string | null;
 };
+
+/** The business's real name once someone has set it, or else the listing's headline. */
+export function nameOf(b: { name: string }, t?: { display_name?: string | null } | null): string {
+  return t?.display_name?.trim() || b.name;
+}
 
 export type Card = {
   location: string; product: string; sellingReason: string; asking: number | null; turnover: number | null;

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Filters } from "@/components/filters";
 import { Shell } from "@/components/shell";
 import { requireUser } from "@/lib/auth";
-import { Business, db, link, routeClass, when } from "@/lib/db";
+import { Business, db, link, nameOf, routeClass, when } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -16,7 +16,10 @@ const SALE_ROUTES = ["Private seller", "Via broker", "Franchisor", "Site enquiry
 const SITES = ["bsale", "business2sell", "AnyBusiness", "businessforsale.com.au", "No Agent Business", "commercialrealestate.com.au", "SEEK Business"];
 const PRICES = [50000, 100000, 200000, 300000, 500000, 750000, 1000000, 2000000];
 const FIGURES = [50000, 100000, 250000, 500000, 1000000];
-const FLAGS: [string, string][] = [["fresh", "New this week"], ["priced", "Has a price"], ["earning", "Shows profit"], ["phone", "Has a phone"], ["active", "Hide under offer"]];
+const FLAGS: [string, string][] = [["fresh", "New this week"], ["priced", "Has a price"], ["earning", "Shows profit"], ["phone", "Has a phone"], ["active", "Hide under offer"], ["archived", "Show archived"]];
+
+/** IDs for a PostgREST in() list. They hold colons, so each is quoted. */
+const idList = (ids: string[]) => `(${ids.map((id) => `"${id.replace(/["\\]/g, "")}"`).join(",")})`;
 
 type Search = Record<string, string | undefined>;
 
@@ -34,15 +37,24 @@ export default async function Find({ searchParams }: { searchParams: Promise<Sea
   const term = (s.q ?? "").trim().toLowerCase().replace(/[%_,()]/g, " ");
   const suburb = (s.suburb ?? "").trim().replace(/[%_,()]/g, " ");
 
+  // Archived businesses stay out of Find unless asked for, and a business found by its real name counts as a match.
+  const { data: named } = await db().from("tracking").select("business_id, display_name, archived_at")
+    .or("archived_at.not.is.null,display_name.not.is.null");
+  const archived = (named ?? []).filter((t) => t.archived_at).map((t) => t.business_id);
+  const realNames = new Map((named ?? []).filter((t) => t.display_name).map((t) => [t.business_id, t.display_name as string]));
+  const byRealName = term ? [...realNames].filter(([, n]) => n.toLowerCase().includes(term)).map(([id]) => id) : [];
+
   let query = db().from("businesses").select("id, kind, site, status, name, types, suburb, price_text, route, tags, first_seen, turnover, profit", { count: "exact" })
     .eq("on_sheet", true).neq("status", "Removed").is("same_as", null);
+  if (!s.archived && archived.length) query = query.not("id", "in", idList(archived));
   if (show !== "all") query = query.eq("kind", show);
   if (routes.length) query = query.in("route", routes);
   if (types.length) query = query.overlaps("types", types);
   if (area === "perth") query = query.eq("perth", true);
   if (s.site) query = query.eq("site", s.site);
   if (suburb) query = query.ilike("suburb", `%${suburb}%`);
-  if (term) query = query.ilike("search_text", `%${term}%`);
+  if (term && byRealName.length) query = query.or(`search_text.ilike.%${term}%,id.in.${idList(byRealName)}`);
+  else if (term) query = query.ilike("search_text", `%${term}%`);
   if (s.min) query = query.gte("price", Number(s.min));
   if (s.max) query = query.lte("price", Number(s.max)).gt("price", 0);
   if (s.turnover) query = query.gte("turnover", Number(s.turnover));
@@ -147,7 +159,7 @@ export default async function Find({ searchParams }: { searchParams: Promise<Sea
       <div className="list">
         {rows.map((b) => (
           <Link className="row" key={b.id} href={link(b.id)}>
-            <span className="c1"><span className="ltitle">{b.name}</span><span className="lsub">{[b.types[0], b.suburb].filter(Boolean).join(" · ")}</span></span>
+            <span className="c1"><span className="ltitle">{nameOf(b, { display_name: realNames.get(b.id) })}{archived.includes(b.id) ? " (archived)" : ""}</span><span className="lsub">{[realNames.has(b.id) ? `Listed as: ${b.name}` : null, b.types[0], b.suburb].filter(Boolean).join(" · ")}</span></span>
             <span className="c2"><span className={routeClass(b.route)}>{b.route}</span></span>
             <span className="c3">{b.tags.map((t) => <span className="tag" key={t}>{t}</span>)}</span>
             <span className="c4 fig">{b.price_text}</span>

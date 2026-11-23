@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { saveDealCard } from "@/lib/actions";
-import { Business, dealCard, db, link, PASSED, STAGES, Tracking, when } from "@/lib/db";
+import { Business, dealCard, db, link, nameOf, PASSED, STAGES, Tracking, when } from "@/lib/db";
 import { SHEETS } from "@/lib/worksheets";
 
 const plain = (value: number | null) => (value ? String(Math.round(value)) : "");
@@ -16,6 +16,9 @@ export async function DealCardForm({ business, tracking }: { business: Business;
       <section className="card"><h2>{tracking ? "Deal card" : "Add to pipeline"}</h2>
         <form action={saveDealCard} className="fieldgrid">
           <input type="hidden" name="id" value={business.id} />
+          <label className="field wide">Business name (the real one, once you know it)
+            <input className="input" name="display_name" defaultValue={nameOf(business, tracking)} />
+          </label>
           <label className="field">Stage
             <select name="stage" defaultValue={tracking?.stage ?? "Shortlist"}>{[...STAGES, PASSED].map((s) => <option key={s}>{s}</option>)}</select>
           </label>

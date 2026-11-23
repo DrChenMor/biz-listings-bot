@@ -4,9 +4,9 @@ import { AgentCard } from "@/components/agent-card";
 import { DealCardForm } from "@/components/deal-card";
 import { DriveCard } from "@/components/drive-card";
 import { Shell } from "@/components/shell";
-import { addNote, setNextStep } from "@/lib/actions";
+import { addNote, archiveBusiness, restoreBusiness, setNextStep } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
-import { Business, BY_HAND, db, Fact, link, routeClass, Tracking, when } from "@/lib/db";
+import { Business, BY_HAND, db, Fact, link, nameOf, routeClass, Tracking, when } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -20,13 +20,15 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
   const tracking = track as Tracking | null;
   const { data: log } = await db().from("activity").select("*").eq("business_id", id).order("at", { ascending: false }).limit(30);
   const broker = b.route === "Via broker";
+  const name = nameOf(b, tracking);
 
   return (
     <Shell user={user} active="/find">
       <Link href="/find">Back to Find</Link>
       <div className="bhead">
         <div>
-          <h1>{b.name}</h1>
+          <h1>{name}</h1>
+          {name !== b.name ? <p className="headline">Listed as: {b.name}</p> : null}
           <p className="lede" style={{ marginBottom: 8 }}>{[b.types[0], b.suburb, b.status].filter(Boolean).join(" · ")}</p>
           <span className={routeClass(b.route)}>{b.route}</span>
         </div>
@@ -36,6 +38,12 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
           {b.map_url ? <a className="btn" href={b.map_url} target="_blank" rel="noreferrer">Map</a> : null}
         </div>
       </div>
+      {tracking?.archived_at ? (
+        <div className="note warn archived" role="status">
+          <span>Archived {when(tracking.archived_at)}{tracking.archived_by ? ` by ${tracking.archived_by}` : ""}. It's hidden from Pipeline, Today and Find.</span>
+          <form action={restoreBusiness}><input type="hidden" name="id" value={b.id} /><button type="submit" className="btn">Restore</button></form>
+        </div>
+      ) : null}
       {b.same_as ? <p className="note">This is the same business as <Link href={link(b.same_as)}>another listing</Link>, which is the one shown in Find.</p> : null}
       {b.also_on?.length ? <p className="note">Also listed on {b.also_on.map((c, i) => <span key={c.id}>{i ? ", " : ""}{c.url ? <a href={c.url} target="_blank" rel="noreferrer">{c.site}</a> : c.site}</span>)}.</p> : null}
       {broker ? <p className="note">This listing stays with the broker. Contact goes through them.</p> : null}
@@ -56,6 +64,16 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
         <div className="stack">
           <DealCardForm business={b} tracking={tracking} />
           <DriveCard business={b} tracking={tracking} />
+          {tracking && !tracking.archived_at ? (
+            <section className="card"><h2>Archive</h2>
+              <form action={archiveBusiness} className="stack">
+                <input type="hidden" name="id" value={b.id} />
+                <p className="lsub">For a business that's off the table, passed on or gone. It leaves every list; nothing is deleted, and Restore brings it back.</p>
+                {tracking.drive_folder_id ? <label className="lsub dcheck"><input type="checkbox" name="move_folder" value="yes" defaultChecked /> Also move its Drive folder to Passed</label> : null}
+                <button type="submit" className="btn">Archive {name.slice(0, 40)}</button>
+              </form>
+            </section>
+          ) : null}
           {b.kind === "sale" && b.site !== BY_HAND ? <AgentCard business={b} /> : null}
           <section className="card"><h2>Next step</h2>
             <form action={setNextStep} className="stack">

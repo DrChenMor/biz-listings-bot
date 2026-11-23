@@ -89,6 +89,29 @@ export async function createFolder(parentId: string, name: string): Promise<stri
   return (await response.json()).id;
 }
 
+const fileUrl = (id: string) => `https://www.googleapis.com/drive/v3/files/${id.replace(/[^\w-]/g, "")}`;
+
+/** Rename a file or folder, as the connected account. */
+export async function renameFile(id: string, name: string): Promise<void> {
+  const response = await fetch(`${fileUrl(id)}?fields=id`, {
+    method: "PATCH", cache: "no-store", headers: { Authorization: `Bearer ${await accessToken()}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ name }),
+  });
+  if (!response.ok) throw new Error(`Google Drive didn't rename it (HTTP ${response.status}).`);
+}
+
+/** Move a file or folder into another folder, as the connected account. Nothing is copied or deleted. */
+export async function moveFile(id: string, toFolder: string): Promise<void> {
+  const auth = { Authorization: `Bearer ${await accessToken()}` };
+  const now = await fetch(`${fileUrl(id)}?fields=parents`, { headers: auth, cache: "no-store" });
+  if (!now.ok) throw new Error(`Google Drive couldn't find the folder (HTTP ${now.status}).`);
+  const parents: string[] = (await now.json()).parents ?? [];
+  if (parents.includes(toFolder)) return;
+  const params = new URLSearchParams({ addParents: toFolder, removeParents: parents.join(","), fields: "id" });
+  const response = await fetch(`${fileUrl(id)}?${params}`, { method: "PATCH", cache: "no-store", headers: auth });
+  if (!response.ok) throw new Error(`Google Drive didn't move it (HTTP ${response.status}).`);
+}
+
 /**
  * Start an upload into a folder. The browser then sends the file straight to the returned address, so big files such
  * as videos never pass through the website. `origin` is the website's address, which Google lets send the file.

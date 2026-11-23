@@ -139,6 +139,15 @@ select { max-width: 100%; }
 .dline { margin: 0; font-size: 14px; }
 .dbuttons { display: flex; flex-wrap: wrap; gap: 6px; margin-top: auto; }
 .dbuttons form { flex: 1 1 120px; }
+.stagestrip .chip.empty { color: var(--quiet); }
+.dstage { display: flex; gap: 6px; }
+.dstage select { flex: 1 1 auto; min-width: 0; max-width: 100%; }
+.dline summary { cursor: pointer; }
+.dline summary:hover { color: var(--accent); }
+.dcheck { display: flex; gap: 6px; align-items: center; margin: 6px 0; }
+.pmove.danger { color: #b42318; border-color: #f3c2bd; }
+.archived { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; }
+.headline { margin: -6px 0 10px; color: var(--quiet); font-size: 14px; }
 .field.wide { grid-column: 1 / -1; }
 .wbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
 .wsheet { display: flex; flex-direction: column; gap: 14px; }

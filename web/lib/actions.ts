@@ -4,9 +4,9 @@ import { randomUUID } from "node:crypto";
 import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { endSession, passwordIsRight, requireUser, startSession } from "./auth";
-import { BY_HAND, db, link, NEXT_STAGE, PASSED, STAGES, today } from "./db";
-import { acquisitionsId } from "./drive";
-import { connection, createFolder, disconnect, saveDoc, startUpload } from "./google";
+import { BY_HAND, db, link, nameOf, NEXT_STAGE, PASSED, STAGES, today } from "./db";
+import { acquisitionsId, folderName, passedId } from "./drive";
+import { connection, createFolder, disconnect, moveFile, renameFile, saveDoc, startUpload } from "./google";
 import { isKind, SHEETS, worksheetHtml } from "./worksheets";
 
 export async function signIn(form: FormData): Promise<void> {
@@ -43,18 +43,27 @@ async function moveTo(id: string, stage: string, who: string, extra: Record<stri
   await note(id, who, `Moved to ${stage}`);
 }
 
+/** Where a form came from, so a button on the Pipeline keeps the view that was open. Only pages on this site. */
+function back(form: FormData, otherwise: string): string {
+  const to = String(form.get("back") || "");
+  return to.startsWith("/") && !to.startsWith("//") ? to : otherwise;
+}
+
+/** A name fit for a Drive folder. */
+const folderSafe = (name: string) => name.replace(/[\\/]+/g, "-").slice(0, 100).trim();
+
 export async function setStage(form: FormData): Promise<void> {
   const who = await requireUser();
   const id = String(form.get("id"));
   await moveTo(id, String(form.get("stage")), who);
-  redirect(String(form.get("back") || link(id)));
+  redirect(back(form, link(id)));
 }
 
 export async function moveOn(form: FormData): Promise<void> {
   const who = await requireUser();
   const next = NEXT_STAGE[String(form.get("stage"))];
   if (next) await moveTo(String(form.get("id")), next, who);
-  redirect("/pipeline");
+  redirect(back(form, "/pipeline"));
 }
 
 export async function followedUp(form: FormData): Promise<void> {
@@ -62,7 +71,7 @@ export async function followedUp(form: FormData): Promise<void> {
   const id = String(form.get("id"));
   await saveTracking(id, { followed_up_on: today() });
   await note(id, who, "Followed up");
-  redirect(String(form.get("back") || link(id)));
+  redirect(back(form, link(id)));
 }
 
 /** "$250k", "1.2m" or "250,000" as a number; blank as nothing. */
@@ -80,8 +89,14 @@ export async function saveDealCard(form: FormData): Promise<void> {
   const who = await requireUser();
   const id = String(form.get("id"));
   const stage = String(form.get("stage"));
-  const { data } = await db().from("tracking").select("stage").eq("business_id", id).maybeSingle();
+  const [{ data }, { data: business }] = await Promise.all([
+    db().from("tracking").select("stage, display_name, drive_folder_id").eq("business_id", id).maybeSingle(),
+    db().from("businesses").select("name").eq("id", id).maybeSingle(),
+  ]);
+  const typed = words(form.get("display_name"));
+  const displayName = typed && typed !== business?.name ? typed.slice(0, 120) : null;
   const card = {
+    display_name: displayName,
     location: words(form.get("location")), product: words(form.get("product")), selling_reason: words(form.get("selling_reason")),
     asking_price: amount(form.get("asking_price")), turnover: amount(form.get("turnover")), expenses: amount(form.get("expenses")),
     profit: amount(form.get("profit")), under_management: words(form.get("under_management")),
@@ -89,6 +104,19 @@ export async function saveDealCard(form: FormData): Promise<void> {
   };
   if (data?.stage !== stage) await moveTo(id, stage, who, card);
   else await saveTracking(id, { ...card, owner: who });
+  if ((data?.display_name ?? null) !== displayName) {
+    const shown = displayName ?? business?.name ?? id;
+    await note(id, who, `Renamed to ${shown}`);
+    // Keep the Drive folder's name in step, when Tom's Google Drive is connected. The website still saves if Drive says no.
+    if (data?.drive_folder_id && displayName && (await connection())) {
+      try {
+        await renameFile(data.drive_folder_id, folderSafe(displayName));
+        await note(id, who, `Renamed the Drive folder to ${folderSafe(displayName)}`);
+      } catch {
+        await note(id, who, "Couldn't rename the Drive folder. Rename it in Drive by hand.");
+      }
+    }
+  }
   redirect(link(id));
 }
 
@@ -113,9 +141,14 @@ export async function linkFolder(form: FormData): Promise<void> {
   const who = await requireUser();
   const id = String(form.get("id"));
   const folder = folderId(form.get("folder"));
-  await saveTracking(id, { drive_folder_id: folder });
-  await note(id, who, folder ? `Linked the Drive folder ${String(form.get("folder_name") || "")}`.trim() : "Unlinked the Drive folder");
-  redirect(String(form.get("back") || link(id)));
+  // Tom names his folders after the real business, so a linked folder gives the business its name, unless one is set.
+  const name = folder ? words(form.get("folder_name")) ?? (await folderName(folder).catch(() => null)) : null;
+  const { data: tracked } = await db().from("tracking").select("display_name").eq("business_id", id).maybeSingle();
+  const { data: business } = await db().from("businesses").select("name").eq("id", id).maybeSingle();
+  const naming = name && !tracked?.display_name && name !== business?.name ? { display_name: name.slice(0, 120) } : {};
+  await saveTracking(id, { drive_folder_id: folder, ...naming });
+  await note(id, who, folder ? `Linked the Drive folder ${name ?? ""}`.trim() : "Unlinked the Drive folder");
+  redirect(back(form, link(id)));
 }
 
 /** A Drive folder whose business isn't in the pipeline yet becomes a business added by hand. */
@@ -138,9 +171,10 @@ export async function createDriveFolder(form: FormData): Promise<void> {
   const { data: business } = await db().from("businesses").select("name").eq("id", id).maybeSingle();
   const root = await acquisitionsId();
   if (!business || !root) throw new Error("The Acquisitions folder isn't shared with the website.");
-  const name = business.name.replace(/[\\/]+/g, "-").slice(0, 100).trim();
+  const typed = words(form.get("name"));
+  const name = folderSafe(typed ?? business.name) || folderSafe(business.name);
   const folder = await createFolder(root, name);
-  await saveTracking(id, { drive_folder_id: folder });
+  await saveTracking(id, { drive_folder_id: folder, ...(typed && typed !== business.name ? { display_name: typed.slice(0, 120) } : {}) });
   await note(id, who, `Made the Drive folder ${name}`);
   redirect(link(id));
 }
@@ -172,16 +206,17 @@ export async function saveWorksheetToDrive(form: FormData): Promise<void> {
   const page = `${link(id)}/sheet/${kind}`;
   const [{ data: business }, { data: tracked }, { data: sheet }] = await Promise.all([
     db().from("businesses").select("name").eq("id", id).maybeSingle(),
-    db().from("tracking").select("drive_folder_id").eq("business_id", id).maybeSingle(),
+    db().from("tracking").select("drive_folder_id, display_name").eq("business_id", id).maybeSingle(),
     db().from("worksheets").select("data, drive_file_id").eq("business_id", id).eq("kind", kind).maybeSingle(),
   ]);
   if (!tracked?.drive_folder_id) redirect(`${page}?drive=no-folder`);
   if (!sheet) redirect(`${page}?drive=empty`);
   if (!(await connection())) redirect(`${page}?drive=not-connected`);
-  const title = `${SHEETS[kind].title} - ${business?.name ?? id}`;
+  const shown = business ? nameOf(business, tracked) : id;
+  const title = `${SHEETS[kind].title} - ${shown}`;
   let saved: { id: string; link: string };
   try {
-    saved = await saveDoc(tracked.drive_folder_id, title, worksheetHtml(kind, business?.name ?? id, sheet.data), sheet.drive_file_id);
+    saved = await saveDoc(tracked.drive_folder_id, title, worksheetHtml(kind, shown, sheet.data), sheet.drive_file_id);
   } catch {
     redirect(`${page}?drive=failed`);
   }
@@ -239,4 +274,57 @@ export async function addNote(form: FormData): Promise<void> {
   const text = String(form.get("text") || "").trim();
   if (text) await note(id, who, text);
   redirect(link(id));
+}
+
+/**
+ * Take a business off every list. Nothing is deleted: Restore brings it back as it was. Its Drive folder can go into
+ * Acquisitions/Passed, Tom's place for businesses that are off the table.
+ */
+export async function archiveBusiness(form: FormData): Promise<void> {
+  const who = await requireUser();
+  const id = String(form.get("id"));
+  const { data: tracked } = await db().from("tracking").select("stage, drive_folder_id").eq("business_id", id).maybeSingle();
+  await saveTracking(id, { archived_at: new Date().toISOString(), archived_by: who, ...(tracked ? {} : { stage: PASSED }) });
+  await note(id, who, "Archived");
+  if (form.get("move_folder") && tracked?.drive_folder_id && (await connection())) {
+    try {
+      const passed = await passedId();
+      if (!passed) throw new Error("No Passed folder");
+      await moveFile(tracked.drive_folder_id, passed);
+      await note(id, who, "Moved the Drive folder to Acquisitions/Passed");
+    } catch {
+      await note(id, who, "Couldn't move the Drive folder to Passed. Move it in Drive by hand.");
+    }
+  }
+  redirect(back(form, link(id)));
+}
+
+export async function restoreBusiness(form: FormData): Promise<void> {
+  const who = await requireUser();
+  const id = String(form.get("id"));
+  await saveTracking(id, { archived_at: null, archived_by: null });
+  await note(id, who, "Restored from the archive");
+  redirect(back(form, link(id)));
+}
+
+/**
+ * Delete a business for good. Only for one added by hand and already archived: a listing found by the bots would come
+ * back on their next run, so those stay archived instead. The Drive folder is never touched.
+ */
+export async function deleteBusiness(form: FormData): Promise<void> {
+  await requireUser();
+  const id = String(form.get("id"));
+  if (form.get("sure") !== "yes") redirect(back(form, "/pipeline?view=archive"));
+  const [{ data: business }, { data: tracked }] = await Promise.all([
+    db().from("businesses").select("site").eq("id", id).maybeSingle(),
+    db().from("tracking").select("archived_at").eq("business_id", id).maybeSingle(),
+  ]);
+  if (business?.site !== BY_HAND || !tracked?.archived_at) throw new Error("Only an archived business added by hand can be deleted.");
+  for (const table of ["worksheets", "activity", "tracking"]) {
+    const { error } = await db().from(table).delete().eq("business_id", id);
+    if (error) throw new Error(error.message);
+  }
+  const { error } = await db().from("businesses").delete().eq("id", id);
+  if (error) throw new Error(error.message);
+  redirect("/pipeline?view=archive");
 }

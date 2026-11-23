@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { Shell } from "@/components/shell";
 import { WorksheetForm } from "@/components/worksheet-form";
 import { requireUser } from "@/lib/auth";
-import { Business, dealCard, db, link, Tracking, when } from "@/lib/db";
+import { Business, dealCard, db, link, nameOf, Tracking, when } from "@/lib/db";
 import { isKind, prefill, SHEETS } from "@/lib/worksheets";
 
 export const dynamic = "force-dynamic";
@@ -29,15 +29,15 @@ export default async function Worksheet({ params, searchParams }: {
   const b = data as Business;
   const { data: track } = await db().from("tracking").select("*").eq("business_id", id).maybeSingle();
   const { data: sheet } = await db().from("worksheets").select("*").eq("business_id", id).eq("kind", kind).maybeSingle();
-  const initial = sheet?.data ?? prefill(kind, b, dealCard(b, track as Tracking | null));
+  const initial = sheet?.data ?? prefill(kind, { ...b, name: nameOf(b, track as Tracking | null) }, dealCard(b, track as Tracking | null));
   const shown = DRIVE_NOTES[drive ?? ""];
   const docLink = doc && /^https:\/\/docs\.google\.com\//.test(doc) ? doc : null;
 
   return (
     <Shell user={user} active="/pipeline">
-      <Link href={link(id)} className="noprint">Back to {b.name}</Link>
+      <Link href={link(id)} className="noprint">Back to {nameOf(b, track as Tracking | null)}</Link>
       <h1>{SHEETS[kind].title}</h1>
-      <p className="lede">{b.name} · {SHEETS[kind].when}{sheet ? ` · last saved ${when(sheet.updated_at)} by ${sheet.updated_by}` : ""}</p>
+      <p className="lede">{nameOf(b, track as Tracking | null)} · {SHEETS[kind].when}{sheet ? ` · last saved ${when(sheet.updated_at)} by ${sheet.updated_by}` : ""}</p>
       {shown ? <p className={`${shown[0]} noprint`} role="status">{shown[1]} {docLink ? <a href={docLink} target="_blank" rel="noreferrer">Open the Doc</a> : null}</p> : null}
       <WorksheetForm id={id} kind={kind} initial={initial} saved={Boolean(sheet)} inDrive={Boolean(sheet?.drive_file_id)} />
     </Shell>

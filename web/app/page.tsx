@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Shell } from "@/components/shell";
 import { requireUser } from "@/lib/auth";
-import { db, link, when } from "@/lib/db";
+import { db, link, nameOf, when } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 
@@ -20,10 +20,13 @@ export default async function Today() {
     count((q) => q.eq("route", "Private seller").neq("status", "Removed")),
     count((q) => q.eq("kind", "sale").gte("first_seen", weekAgo)),
   ]);
-  const { data: steps } = await db().from("tracking").select("business_id, next_step, next_due, owner, businesses(name)")
-    .not("next_step", "is", null).order("next_due", { ascending: true, nullsFirst: false }).limit(8);
-  const { data: fresh } = await db().from("businesses").select("id, name, suburb, price_text, route").eq("kind", "sale").eq("on_sheet", true)
-    .neq("status", "Removed").order("first_seen", { ascending: false, nullsFirst: false }).limit(8);
+  const { data: steps } = await db().from("tracking").select("business_id, next_step, next_due, owner, display_name, businesses(name)")
+    .not("next_step", "is", null).is("archived_at", null).order("next_due", { ascending: true, nullsFirst: false }).limit(8);
+  const { data: fresh } = await db().from("businesses").select("id, name, suburb, price_text, route, tracking(display_name, archived_at)")
+    .eq("kind", "sale").eq("on_sheet", true).is("same_as", null).neq("status", "Removed")
+    .order("first_seen", { ascending: false, nullsFirst: false }).limit(12);
+  const newest = (fresh ?? []).map((b: any) => ({ ...b, tracking: Array.isArray(b.tracking) ? b.tracking[0] : b.tracking }))
+    .filter((b: any) => !b.tracking?.archived_at).slice(0, 8);
   const { data: runs } = await db().from("site_runs").select("*").order("site");
 
   return (
@@ -41,14 +44,14 @@ export default async function Today() {
           {steps?.length ? steps.map((s: any) => (
             <Link className="item" key={s.business_id} href={link(s.business_id)}>
               <span className="ltitle">{s.next_step}</span>
-              <span className="lsub">{s.businesses?.name}{s.next_due ? ` · due ${when(s.next_due)}` : ""}{s.owner ? ` · ${s.owner}` : ""}</span>
+              <span className="lsub">{s.businesses ? nameOf(s.businesses, s) : ""}{s.next_due ? ` · due ${when(s.next_due)}` : ""}{s.owner ? ` · ${s.owner}` : ""}</span>
             </Link>
           )) : <p className="lsub">Nothing yet. Open a business in Find and set its next step.</p>}
         </section>
         <section className="card"><h2>Newest for sale</h2>
-          {fresh?.map((b: any) => (
+          {newest.map((b: any) => (
             <Link className="item" key={b.id} href={link(b.id)}>
-              <span className="ltitle">{b.name}</span>
+              <span className="ltitle">{nameOf(b, b.tracking)}</span>
               <span className="lsub">{[b.suburb, b.price_text, b.route].filter(Boolean).join(" · ")}</span>
             </Link>
           ))}
