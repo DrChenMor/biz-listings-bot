@@ -204,3 +204,8 @@ select.mark { cursor: pointer; padding-right: 6px; }
 .rowlink::after { content: ""; position: absolute; inset: 0; }
 .c6 { flex: 0 0 150px; position: relative; z-index: 1; }
 @media (max-width: 820px) { .c6 { flex-basis: auto; } }
+.dor { margin: 10px 0 0; }
+.btn.danger { color: #b42318; border-color: #f3c2bd; }
+.folderdel { flex: 1 0 100%; }
+.folderdel summary { cursor: pointer; width: max-content; }
+.folderdel summary:hover { color: #b42318; }

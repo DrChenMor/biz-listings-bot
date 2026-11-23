@@ -6,8 +6,8 @@ import { redirect } from "next/navigation";
 import { endSession, passwordIsRight, requireUser, startSession } from "./auth";
 import { BY_HAND, db, link, nameOf, NEXT_STAGE, PASSED, STAGES, today } from "./db";
 import { MARKS } from "./marks";
-import { acquisitionsId, folderName, passedId } from "./drive";
-import { connection, createFolder, disconnect, moveFile, renameFile, saveDoc, startUpload } from "./google";
+import { acquisitionsId, businessFolders, folderName, passedId } from "./drive";
+import { binFile, connection, createFolder, disconnect, moveFile, renameFile, saveDoc, startUpload } from "./google";
 import { isKind, SHEETS, worksheetHtml } from "./worksheets";
 
 export async function signIn(form: FormData): Promise<void> {
@@ -309,25 +309,46 @@ export async function restoreBusiness(form: FormData): Promise<void> {
 }
 
 /**
- * Delete a business for good. Only for one added by hand and already archived: a listing found by the bots would come
- * back on their next run, so those stay archived instead. The Drive folder is never touched.
+ * Delete a business from the website right away, after a confirm. One added by hand goes completely. A listing found by
+ * the bots would come back on their next run, so it leaves the pipeline, loses its card and worksheets, and is marked
+ * Not for us in Find; its history stays. Its Drive folder goes to the Drive bin only when that box is ticked.
  */
 export async function deleteBusiness(form: FormData): Promise<void> {
-  await requireUser();
+  const who = await requireUser();
   const id = String(form.get("id"));
-  if (form.get("sure") !== "yes") redirect(back(form, "/pipeline?view=archive"));
+  if (form.get("sure") !== "yes") redirect(back(form, "/pipeline"));
   const [{ data: business }, { data: tracked }] = await Promise.all([
     db().from("businesses").select("site").eq("id", id).maybeSingle(),
-    db().from("tracking").select("archived_at").eq("business_id", id).maybeSingle(),
+    db().from("tracking").select("drive_folder_id").eq("business_id", id).maybeSingle(),
   ]);
-  if (business?.site !== BY_HAND || !tracked?.archived_at) throw new Error("Only an archived business added by hand can be deleted.");
-  for (const table of ["worksheets", "activity", "tracking"]) {
+  if (!business) redirect(back(form, "/pipeline"));
+  if (form.get("bin_folder") && tracked?.drive_folder_id && (await connection())) await binFile(tracked.drive_folder_id);
+  const byHand = business.site === BY_HAND;
+  for (const table of byHand ? ["worksheets", "activity", "reviews", "tracking"] : ["worksheets", "tracking"]) {
     const { error } = await db().from(table).delete().eq("business_id", id);
     if (error) throw new Error(error.message);
   }
-  const { error } = await db().from("businesses").delete().eq("id", id);
-  if (error) throw new Error(error.message);
-  redirect("/pipeline?view=archive");
+  if (byHand) {
+    const { error } = await db().from("businesses").delete().eq("id", id);
+    if (error) throw new Error(error.message);
+  } else {
+    await db().from("reviews").upsert({ business_id: id, mark: "Not for us", marked_by: who, marked_at: new Date().toISOString() });
+    await note(id, who, "Deleted from the pipeline");
+  }
+  const to = back(form, "/pipeline");
+  redirect(to.startsWith("/b/") ? "/pipeline" : to);
+}
+
+/** Put a Drive folder that isn't linked to any business in the Drive bin, after a confirm. Only folders in Acquisitions. */
+export async function binFolder(form: FormData): Promise<void> {
+  await requireUser();
+  const folder = folderId(form.get("folder"));
+  if (form.get("sure") !== "yes" || !folder) redirect("/pipeline");
+  const { data: linked } = await db().from("tracking").select("business_id").eq("drive_folder_id", folder).maybeSingle();
+  const known = (await businessFolders()).some((f) => f.id === folder);
+  if (linked || !known) throw new Error("Only a folder in Acquisitions that no business uses can be deleted here.");
+  await binFile(folder);
+  redirect("/pipeline");
 }
 
 /**

@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Shell } from "@/components/shell";
-import { addBusiness, addFromFolder, archiveBusiness, deleteBusiness, followedUp, linkFolder, moveOn, restoreBusiness, setStage } from "@/lib/actions";
+import { addBusiness, addFromFolder, archiveBusiness, binFolder, deleteBusiness, followedUp, linkFolder, moveOn, restoreBusiness, setStage } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 import { BY_HAND, Business, dealCard, db, link, money, nameOf, NEXT_STAGE, PASSED, STAGES, Tracking, when } from "@/lib/db";
 import { businessFolders, driveReady, DriveFolder, folderLink } from "@/lib/drive";
@@ -23,6 +23,20 @@ function Figure({ label, value }: { label: string; value: number | null }) {
   return <div><dt>{label}</dt><dd className="fig">{value ? money(value) : "—"}</dd></div>;
 }
 
+/** Delete right away, behind a confirm. Says what happens, which differs for a business added by hand. */
+function DeleteForm({ row, name, hidden }: { row: Row; name: string; hidden: (more?: Record<string, string>) => React.ReactNode }) {
+  const byHand = row.businesses.site === BY_HAND;
+  return (
+    <form action={deleteBusiness}>
+      {hidden({ sure: "yes" })}
+      <p className="lsub">{byHand ? "Removes it, its card, worksheets and notes from the website."
+        : "Removes it from the pipeline with its card and worksheets, and marks it Not for us in Find. The bots keep the listing itself."}</p>
+      {row.drive_folder_id ? <label className="lsub dcheck"><input type="checkbox" name="bin_folder" value="yes" /> Also put its Drive folder in the Drive bin</label> : null}
+      <button type="submit" className="pmove danger">Yes, delete {name.slice(0, 40)}</button>
+    </form>
+  );
+}
+
 function DealCard({ row, here }: { row: Row; here: string }) {
   const b = row.businesses;
   const card = dealCard(b, row);
@@ -38,15 +52,10 @@ function DealCard({ row, here }: { row: Row; here: string }) {
         <div className="dbuttons">
           <form action={restoreBusiness}>{hidden()}<button type="submit" className="pmove">Restore</button></form>
         </div>
-        {b.site === BY_HAND ? (
-          <details className="dline">
-            <summary className="lsub">Delete for good</summary>
-            <form action={deleteBusiness}>{hidden({ sure: "yes" })}
-              <p className="lsub">Removes it, its worksheets and its notes from the website. Its Drive folder stays in Drive.</p>
-              <button type="submit" className="pmove danger">Yes, delete {name.slice(0, 40)}</button>
-            </form>
-          </details>
-        ) : null}
+        <details className="dline">
+          <summary className="lsub">Delete</summary>
+          <DeleteForm row={row} name={name} hidden={hidden} />
+        </details>
       </article>
     );
   }
@@ -89,13 +98,15 @@ function DealCard({ row, here }: { row: Row; here: string }) {
         <button type="submit" className="btn">Move</button>
       </form>
       <details className="dline">
-        <summary className="lsub">Archive</summary>
+        <summary className="lsub">Archive or delete</summary>
         <form action={archiveBusiness}>
           {hidden()}
           <p className="lsub">Takes it off every list. Nothing is deleted, and Restore in the Archive view brings it back.</p>
           {row.drive_folder_id ? <label className="lsub dcheck"><input type="checkbox" name="move_folder" value="yes" defaultChecked /> Also move its Drive folder to Passed</label> : null}
           <button type="submit" className="pmove">Archive {name.slice(0, 40)}</button>
         </form>
+        <p className="lsub dor">or delete it now:</p>
+        <DeleteForm row={row} name={name} hidden={hidden} />
       </details>
     </article>
   );
@@ -179,6 +190,14 @@ export default async function Pipeline({ searchParams }: { searchParams: Promise
                 </select>
                 <button type="submit" className="btn">Add as new business</button>
               </form>
+              <details className="folderdel">
+                <summary className="lsub">Delete</summary>
+                <form action={binFolder} className="actions">
+                  <input type="hidden" name="folder" value={folder.id} /><input type="hidden" name="sure" value="yes" />
+                  <span className="lsub">Puts the folder and everything in it in the Drive bin. Drive keeps it there for 30 days.</span>
+                  <button type="submit" className="btn danger">Yes, delete {folder.name.slice(0, 30)}</button>
+                </form>
+              </details>
             </div>
           ))}
         </section>

@@ -100,6 +100,15 @@ export async function renameFile(id: string, name: string): Promise<void> {
   if (!response.ok) throw new Error(`Google Drive didn't rename it (HTTP ${response.status}).`);
 }
 
+/** Put a file or folder in the Drive bin, as the connected account. Drive keeps it there for 30 days. */
+export async function binFile(id: string): Promise<void> {
+  const response = await fetch(`${fileUrl(id)}?fields=id`, {
+    method: "PATCH", cache: "no-store", headers: { Authorization: `Bearer ${await accessToken()}`, "Content-Type": "application/json" },
+    body: JSON.stringify({ trashed: true }),
+  });
+  if (!response.ok) throw new Error(`Google Drive didn't bin it (HTTP ${response.status}).`);
+}
+
 /** Move a file or folder into another folder, as the connected account. Nothing is copied or deleted. */
 export async function moveFile(id: string, toFolder: string): Promise<void> {
   const auth = { Authorization: `Bearer ${await accessToken()}` };
