@@ -26,7 +26,7 @@ def test_normalise_matches_the_bookmark_rules():
     row = seek.normalise(raw(), "2026-10-23 15:00")
     assert row["key"] == "seek:794248"
     assert (row["price_aud"], row["price_basis"]) == (87000, "+ stock (SAV)")
-    assert (row["turnover_aud"], row["profit_aud"]) == (13000 * 52, 160000)
+    assert (row["turnover_aud"], row["profit_aud"]) == (None, 160000)  # weekly sales are not a yearly turnover
     assert row["seek_updated"] == "2026-10-23 11:31"  # Perth time
     assert seek.SEEK.headers[-1] == "Key"
 

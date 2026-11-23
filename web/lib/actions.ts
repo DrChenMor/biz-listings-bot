@@ -352,16 +352,11 @@ export async function binFolder(form: FormData): Promise<void> {
 }
 
 /**
- * Mark a listing as looked at, from Find or its page. "Add to pipeline" puts it on the Shortlist, which counts as
- * reviewed. Returns the mark to show. Everyone signed in sees the same marks.
+ * Mark a listing as looked at, from Find or its page. Adding it to the pipeline happens on its page, with the Deal card.
+ * Returns the mark to show. Everyone signed in sees the same marks.
  */
 export async function setReview(id: string, mark: string): Promise<string> {
   const who = await requireUser();
-  if (mark === "Add to pipeline") {
-    const { data: tracked } = await db().from("tracking").select("stage").eq("business_id", id).maybeSingle();
-    if (!tracked) await moveTo(id, "Shortlist", who);
-    return "In pipeline";
-  }
   if (!MARKS.includes(mark)) throw new Error("Unknown mark");
   const reviews = db().from("reviews");
   const { error } = mark === "Not reviewed"

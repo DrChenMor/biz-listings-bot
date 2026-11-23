@@ -14,11 +14,12 @@ def test_money_reads_common_price_formats():
     assert extract.price("$200K") == 200_000
 
 
-def test_turnover_skips_words_and_annualises_weekly_takings():
+def test_turnover_skips_words_and_never_multiplies_up_weekly_or_monthly_takings():
     assert extract.turnover("Turnover: $Approximately $281,700 for FY2026") == 281_700
     assert extract.turnover("FY2026 sales of approximately $281,700") == 281_700
-    assert extract.turnover("Averaging $51,415 a week, open 6 days") == 51_415 * 52
-    assert extract.turnover("Monthly revenue $20,000 per month") == 240_000
+    assert extract.turnover("Averaging $51,415 a week, open 6 days") is None
+    assert extract.turnover("Monthly revenue $20,000 per month") is None
+    assert extract.turnover("bringing in about $30,000 a month in recurring revenue") is None
     assert extract.turnover("Turnover: $2026FY revenue approximately $550,000 PA ex GST") == 550_000
     assert extract.turnover("Revenue approx. $400,000 last year") == 400_000
     assert extract.turnover("Turnover: $2026 – $329,300; 2025 – $317,900") == 329_300
@@ -30,7 +31,7 @@ def test_turnover_skips_words_and_annualises_weekly_takings():
 
 def test_amount_written_before_its_keyword():
     text = "Established 23+ years, this salon delivers $13K weekly sales and ~$160K net profit, with 11 stations."
-    assert extract.turnover(text) == 13_000 * 52
+    assert extract.turnover(text) is None  # "$13K weekly sales" is not a yearly figure
     assert extract.profit(text) == (160_000, "Net profit")
     assert extract.turnover("$1.2m annual turnover") == 1_200_000
 
@@ -50,9 +51,10 @@ def test_labelled_lines_come_first_and_not_disclosed_falls_back_to_the_descripti
     assert extract.profit("Net Profit: Not disclosed\nEBITDA of $210,000") == (210_000, "EBITDA")
 
 
-def test_weekly_keyword_before_the_amount_and_a_stray_k():
-    assert extract.turnover("At a glance: Weekly Sales: $6,370 Rent: $751") == 6_370 * 52
-    assert extract.turnover("Weekly turnover averaging approximately $20,000") == 20_000 * 52
+def test_weekly_figures_are_left_out_and_a_stray_k():
+    assert extract.turnover("At a glance: Weekly Sales: $6,370 Rent: $751") is None
+    assert extract.turnover("Weekly turnover averaging approximately $20,000") is None
+    assert extract.turnover("Weekly sales $6,000\nAnnual turnover: $312,000") == 312_000
     assert extract.profit("$110500K Profit to One Owner-Operator") == (110_500, "Net profit")
 
 

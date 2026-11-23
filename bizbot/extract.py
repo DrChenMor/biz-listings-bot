@@ -193,7 +193,8 @@ def phones(text: str) -> list[str]:
 
 
 def _amount_before(words: str, text: str) -> tuple[int | None, str]:
-    """An amount followed by its keyword: "$13K weekly sales" (yearly: x52), "~$160K net profit"."""
+    """An amount followed by its keyword: "~$160K net profit". A weekly or monthly figure is skipped, not multiplied up:
+    the website shows only yearly figures a listing actually states."""
     lead_in = re.compile(_LEAD_IN.format(words=words), re.I)
     for match in _MONEY.finditer(text or ""):
         if _YEAR.fullmatch(match.group(1)) and not match.group(2):
@@ -201,11 +202,9 @@ def _amount_before(words: str, text: str) -> tuple[int | None, str]:
         hit = lead_in.match(text[match.end(): match.end() + 40])
         if not hit:
             continue
+        if re.search(r"week|month", hit.group(1), re.I):
+            continue
         value = _amount(match)
-        if "week" in hit.group(1).lower():
-            value *= 52
-        elif "month" in hit.group(1).lower():
-            value *= 12
         if value >= 1_000:
             return value, hit.group(0)
     return None, ""
@@ -227,13 +226,14 @@ def _amount_after(keyword: re.Pattern, text: str, window: int = 80) -> tuple[int
         # e.g. "sales are cash, so there are no debtors, and $250,000 in forward orders".
         if _PRICE_WORDS.search(between) or re.search(r"[,;]\s|\.\s+(?=[A-Z])", between):
             continue
-        value = _amount(match)
         after = tail[match.end():]
-        before = text[max(0, found.start() - 12): found.start()]  # "Weekly sales: $6,370"
-        if _PER_WEEK.search(after) or re.search(r"\bweekly\s+$", before, re.I):
-            value *= 52
-        elif _PER_MONTH.search(after) or re.search(r"\bmonthly\s+$", before, re.I):
-            value *= 12
+        # The same line and sentence before the keyword: "Weekly sales: $6,370", "Weekly turnover averaging $20,000".
+        before = re.split(r"[\n.;]", text[max(0, found.start() - 40): found.start()])[-1]
+        # A weekly or monthly figure is not a yearly one, and multiplying it up would show a number nobody wrote.
+        if (_PER_WEEK.search(after) or _PER_MONTH.search(after) or re.search(r"\b(weekly|monthly)\b", before, re.I)
+                or re.search(r"\b(weekly|monthly)\b", found.group(0), re.I)):
+            continue
+        value = _amount(match)
         if value >= 1_000:
             return value, found.group(0) + between
     return None, ""
