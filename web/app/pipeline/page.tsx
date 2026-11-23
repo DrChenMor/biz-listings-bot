@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { Shell } from "@/components/shell";
-import { addBusiness, addFromFolder, archiveBusiness, binFolder, deleteBusiness, followedUp, linkFolder, moveOn, restoreBusiness, setStage } from "@/lib/actions";
+import { ConfirmButton } from "@/components/confirm-button";
+import { addBusiness, addFromFolder, archiveBusiness, binFolder, deleteBusiness, followedUp, linkFolder, restoreBusiness, setStage } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
-import { BY_HAND, Business, dealCard, db, link, money, nameOf, NEXT_STAGE, PASSED, STAGES, Tracking, when } from "@/lib/db";
+import { BY_HAND, Business, dealCard, db, link, money, nameOf, PASSED, STAGES, Tracking, when } from "@/lib/db";
 import { businessFolders, driveReady, DriveFolder, folderLink } from "@/lib/drive";
 
 export const dynamic = "force-dynamic";
@@ -23,24 +24,25 @@ function Figure({ label, value }: { label: string; value: number | null }) {
   return <div><dt>{label}</dt><dd className="fig">{value ? money(value) : "—"}</dd></div>;
 }
 
-/** Delete right away, behind a confirm. Says what happens, which differs for a business added by hand. */
-function DeleteForm({ row, name, hidden }: { row: Row; name: string; hidden: (more?: Record<string, string>) => React.ReactNode }) {
+/** Archive and Delete, as two small buttons. Delete asks first; archive is undone with Restore. */
+function CardActions({ row, name, hidden }: { row: Row; name: string; hidden: (more?: Record<string, string>) => React.ReactNode }) {
   const byHand = row.businesses.site === BY_HAND;
+  const deleteQuestion = byHand
+    ? `Delete ${name}? Its card, worksheets and notes are removed from the website. The Drive folder stays.`
+    : `Delete ${name}? It leaves the pipeline with its card and worksheets, and is marked Not for us in Find. The Drive folder stays.`;
   return (
-    <form action={deleteBusiness}>
-      {hidden({ sure: "yes" })}
-      <p className="lsub">{byHand ? "Removes it, its card, worksheets and notes from the website."
-        : "Removes it from the pipeline with its card and worksheets, and marks it Not for us in Find. The bots keep the listing itself."}</p>
-      {row.drive_folder_id ? <label className="lsub dcheck"><input type="checkbox" name="bin_folder" value="yes" /> Also put its Drive folder in the Drive bin</label> : null}
-      <button type="submit" className="pmove danger">Yes, delete {name.slice(0, 40)}</button>
-    </form>
+    <div className="dsmall">
+      {row.archived_at
+        ? <form action={restoreBusiness}>{hidden()}<button type="submit" className="plain dark">Restore</button></form>
+        : <form action={archiveBusiness}>{hidden({ move_folder: "yes" })}<button type="submit" className="plain dark" title="Takes it off every list and moves its Drive folder to Passed. Restore brings it back.">Archive</button></form>}
+      <form action={deleteBusiness}>{hidden({ sure: "yes" })}<ConfirmButton question={deleteQuestion} className="plain danger">Delete</ConfirmButton></form>
+    </div>
   );
 }
 
 function DealCard({ row, here }: { row: Row; here: string }) {
   const b = row.businesses;
   const card = dealCard(b, row);
-  const next = NEXT_STAGE[row.stage];
   const name = nameOf(b, row);
   const hidden = (more: Record<string, string> = {}) => Object.entries({ id: b.id, back: here, ...more })
     .map(([key, value]) => <input key={key} type="hidden" name={key} value={value} />);
@@ -49,13 +51,7 @@ function DealCard({ row, here }: { row: Row; here: string }) {
       <article className="dcard">
         <Link href={link(b.id)} className="dname">{name}</Link>
         <span className="lsub">Was at {row.stage} · archived {when(row.archived_at)}{row.archived_by ? ` by ${row.archived_by}` : ""}</span>
-        <div className="dbuttons">
-          <form action={restoreBusiness}>{hidden()}<button type="submit" className="pmove">Restore</button></form>
-        </div>
-        <details className="dline">
-          <summary className="lsub">Delete</summary>
-          <DeleteForm row={row} name={name} hidden={hidden} />
-        </details>
+        <CardActions row={row} name={name} hidden={hidden} />
       </article>
     );
   }
@@ -79,17 +75,9 @@ function DealCard({ row, here }: { row: Row; here: string }) {
       </p>
       {row.next_step ? <p className="dline"><b>Next:</b> {row.next_step}{row.next_due ? ` (by ${when(row.next_due)})` : ""}</p> : null}
       {row.drive_folder_id ? <a className="dline" href={folderLink(row.drive_folder_id)} target="_blank" rel="noreferrer">Drive folder</a> : null}
-      <div className="dbuttons">
-        {next ? (
-          <form action={moveOn}>{hidden({ stage: row.stage })}<button type="submit" className="pmove">Move to {next}</button></form>
-        ) : null}
-        {row.stage === "Approached" ? (
-          <form action={followedUp}>{hidden()}<button type="submit" className="pmove">Followed up today</button></form>
-        ) : null}
-        {row.stage === "Due diligence" ? (
-          <form action={setStage}>{hidden({ stage: "Deal re-work" })}<button type="submit" className="pmove">Needs re-work</button></form>
-        ) : null}
-      </div>
+      {row.stage === "Approached" ? (
+        <form action={followedUp}>{hidden()}<button type="submit" className="pmove">Followed up today</button></form>
+      ) : null}
       <form action={setStage} className="dstage">
         {hidden()}
         <select name="stage" aria-label={`Stage for ${name}`} defaultValue={row.stage}>
@@ -97,17 +85,7 @@ function DealCard({ row, here }: { row: Row; here: string }) {
         </select>
         <button type="submit" className="btn">Move</button>
       </form>
-      <details className="dline">
-        <summary className="lsub">Archive or delete</summary>
-        <form action={archiveBusiness}>
-          {hidden()}
-          <p className="lsub">Takes it off every list. Nothing is deleted, and Restore in the Archive view brings it back.</p>
-          {row.drive_folder_id ? <label className="lsub dcheck"><input type="checkbox" name="move_folder" value="yes" defaultChecked /> Also move its Drive folder to Passed</label> : null}
-          <button type="submit" className="pmove">Archive {name.slice(0, 40)}</button>
-        </form>
-        <p className="lsub dor">or delete it now:</p>
-        <DeleteForm row={row} name={name} hidden={hidden} />
-      </details>
+      <CardActions row={row} name={name} hidden={hidden} />
     </article>
   );
 }
@@ -190,14 +168,10 @@ export default async function Pipeline({ searchParams }: { searchParams: Promise
                 </select>
                 <button type="submit" className="btn">Add as new business</button>
               </form>
-              <details className="folderdel">
-                <summary className="lsub">Delete</summary>
-                <form action={binFolder} className="actions">
-                  <input type="hidden" name="folder" value={folder.id} /><input type="hidden" name="sure" value="yes" />
-                  <span className="lsub">Puts the folder and everything in it in the Drive bin. Drive keeps it there for 30 days.</span>
-                  <button type="submit" className="btn danger">Yes, delete {folder.name.slice(0, 30)}</button>
-                </form>
-              </details>
+              <form action={binFolder} className="folderdel">
+                <input type="hidden" name="folder" value={folder.id} /><input type="hidden" name="sure" value="yes" />
+                <ConfirmButton question={`Delete the folder ${folder.name}? It goes to the Drive bin with everything in it, and Drive keeps it there for 30 days.`} className="plain danger">Delete folder</ConfirmButton>
+              </form>
             </div>
           ))}
         </section>

@@ -209,3 +209,6 @@ select.mark { cursor: pointer; padding-right: 6px; }
 .folderdel { flex: 1 0 100%; }
 .folderdel summary { cursor: pointer; width: max-content; }
 .folderdel summary:hover { color: #b42318; }
+.dsmall { display: flex; gap: 14px; align-items: center; }
+.plain.danger { color: #b42318; font-size: 13px; }
+.plain.danger:hover { text-decoration: underline; }

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AgentCard } from "@/components/agent-card";
+import { ConfirmButton } from "@/components/confirm-button";
 import { DealCardForm } from "@/components/deal-card";
 import { DriveCard } from "@/components/drive-card";
 import { ReviewMark } from "@/components/review-mark";
@@ -68,24 +69,18 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
           <DealCardForm business={b} tracking={tracking} />
           <DriveCard business={b} tracking={tracking} />
           {tracking && !tracking.archived_at ? (
-            <section className="card"><h2>Archive or delete</h2>
-              <form action={archiveBusiness} className="stack">
-                <input type="hidden" name="id" value={b.id} />
-                <p className="lsub">For a business that's off the table, passed on or gone. It leaves every list; nothing is deleted, and Restore brings it back.</p>
-                {tracking.drive_folder_id ? <label className="lsub dcheck"><input type="checkbox" name="move_folder" value="yes" defaultChecked /> Also move its Drive folder to Passed</label> : null}
-                <button type="submit" className="btn">Archive {name.slice(0, 40)}</button>
+            <div className="dsmall">
+              <form action={archiveBusiness}>
+                <input type="hidden" name="id" value={b.id} /><input type="hidden" name="move_folder" value="yes" />
+                <button type="submit" className="plain dark" title="Takes it off every list and moves its Drive folder to Passed. Restore brings it back.">Archive</button>
               </form>
-              <details className="dline" style={{ marginTop: 10 }}>
-                <summary className="lsub">Delete it now instead</summary>
-                <form action={deleteBusiness} className="stack">
-                  <input type="hidden" name="id" value={b.id} /><input type="hidden" name="sure" value="yes" /><input type="hidden" name="back" value="/pipeline" />
-                  <p className="lsub">{b.site === BY_HAND ? "Removes it, its card, worksheets and notes from the website."
-                    : "Removes it from the pipeline with its card and worksheets, and marks it Not for us in Find."}</p>
-                  {tracking.drive_folder_id ? <label className="lsub dcheck"><input type="checkbox" name="bin_folder" value="yes" /> Also put its Drive folder in the Drive bin</label> : null}
-                  <button type="submit" className="btn danger">Yes, delete {name.slice(0, 40)}</button>
-                </form>
-              </details>
-            </section>
+              <form action={deleteBusiness}>
+                <input type="hidden" name="id" value={b.id} /><input type="hidden" name="sure" value="yes" /><input type="hidden" name="back" value="/pipeline" />
+                <ConfirmButton className="plain danger" question={b.site === BY_HAND
+                  ? `Delete ${name}? Its card, worksheets and notes are removed from the website. The Drive folder stays.`
+                  : `Delete ${name}? It leaves the pipeline with its card and worksheets, and is marked Not for us in Find. The Drive folder stays.`}>Delete</ConfirmButton>
+              </form>
+            </div>
           ) : null}
           {b.kind === "sale" && b.site !== BY_HAND ? <AgentCard business={b} /> : null}
           <section className="card"><h2>Next step</h2>
