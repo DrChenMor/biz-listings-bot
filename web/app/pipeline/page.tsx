@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Shell } from "@/components/shell";
 import { ConfirmButton } from "@/components/confirm-button";
-import { addBusiness, addFromFolder, archiveBusiness, binFolder, deleteBusiness, followedUp, linkFolder, restoreBusiness, setStage } from "@/lib/actions";
+import { addBusiness, addFromFolder, archiveBusiness, binFolder, deleteBusiness, dismissUnmatched, followedUp, linkFolder, linkUnmatched, restoreBusiness, setStage } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 import { BY_HAND, Business, dealCard, db, link, money, nameOf, PASSED, STAGES, Tracking, when } from "@/lib/db";
 import { businessFolders, driveReady, DriveFolder, folderLink } from "@/lib/drive";
@@ -109,6 +109,10 @@ export default async function Pipeline({ searchParams }: { searchParams: Promise
     unlinked = [];  // Drive having a bad moment shouldn't stop the pipeline from showing.
   }
   const working = live.filter((r) => r.stage !== PASSED && !r.drive_folder_id);
+  const { data: unmatchedData } = await db().from("unmatched_mail").select("gmail_id, sent_at, sender, sender_name, subject, snippet")
+    .eq("dismissed", false).order("sent_at", { ascending: false }).limit(30);
+  const unmatched = unmatchedData ?? [];
+  const inPipeline = live.filter((r) => r.stage !== PASSED);
   const overview = view === "active" || view === "all";
   const groups = stage ? [stage] : view === "archive" ? ["Archived"] : view === "passed" ? [PASSED] : view === "all" ? [...STAGES, PASSED] : STAGES;
 
@@ -172,6 +176,26 @@ export default async function Pipeline({ searchParams }: { searchParams: Promise
                 <input type="hidden" name="folder" value={folder.id} /><input type="hidden" name="sure" value="yes" />
                 <ConfirmButton question={`Delete the folder ${folder.name}? It goes to the Drive bin with everything in it, and Drive keeps it there for 30 days.`} className="plain danger">Delete folder</ConfirmButton>
               </form>
+            </div>
+          ))}
+        </section>
+      ) : null}
+      {overview && unmatched.length ? (
+        <section className="stagesec card" id="emails">
+          <h2>Emails not matched yet ({unmatched.length})</h2>
+          <p className="lsub">Emails in Tom's deals inbox from people who aren't in any business's contacts. Pick the business and the sender becomes its contact, so the next run copies their emails. Not about a deal? Dismiss skips that sender from now on.</p>
+          {unmatched.map((m) => (
+            <div className="item folderrow" key={m.gmail_id}>
+              <span className="ltitle">{m.sender_name || m.sender}{m.subject ? `: ${m.subject}` : ""}<span className="lsub"> {m.sender} · {when(m.sent_at)}</span></span>
+              <form action={linkUnmatched} className="actions">
+                <input type="hidden" name="gmail_id" value={m.gmail_id} />
+                <select name="id" aria-label={`Business for the email from ${m.sender}`} defaultValue="" required>
+                  <option value="" disabled>It's about…</option>
+                  {inPipeline.map((r) => <option key={r.business_id} value={r.business_id}>{nameOf(r.businesses, r).slice(0, 70)}</option>)}
+                </select>
+                <button type="submit" className="btn">Add as contact</button>
+              </form>
+              <form action={dismissUnmatched}><input type="hidden" name="gmail_id" value={m.gmail_id} /><button type="submit" className="plain dark">Dismiss</button></form>
             </div>
           ))}
         </section>

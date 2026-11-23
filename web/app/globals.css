@@ -212,3 +212,9 @@ select.mark { cursor: pointer; padding-right: 6px; }
 .dsmall { display: flex; gap: 14px; align-items: center; }
 .plain.danger { color: #b42318; font-size: 13px; }
 .plain.danger:hover { text-decoration: underline; }
+.contactrow { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
+.mail { border-top: 1px solid #efecf8; padding: 10px 0; }
+.mail summary { cursor: pointer; display: flex; flex-direction: column; gap: 2px; }
+.mail .writing { margin-top: 8px; }
+.steps { margin: 8px 0 0; padding-left: 20px; }
+.steps li { margin: 6px 0; }

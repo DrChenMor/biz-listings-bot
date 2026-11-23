@@ -4,6 +4,7 @@ import { AgentCard } from "@/components/agent-card";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DealCardForm } from "@/components/deal-card";
 import { DriveCard } from "@/components/drive-card";
+import { CommunicationCard, ContactsCard } from "@/components/mail-cards";
 import { ReviewMark } from "@/components/review-mark";
 import { Shell } from "@/components/shell";
 import { addNote, archiveBusiness, deleteBusiness, restoreBusiness, setNextStep } from "@/lib/actions";
@@ -68,6 +69,8 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
         <div className="stack">
           <DealCardForm business={b} tracking={tracking} />
           <DriveCard business={b} tracking={tracking} />
+          {tracking ? <ContactsCard id={b.id} /> : null}
+          <CommunicationCard id={b.id} />
           {tracking && !tracking.archived_at ? (
             <div className="dsmall">
               <form action={archiveBusiness}>

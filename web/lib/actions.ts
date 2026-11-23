@@ -366,3 +366,57 @@ export async function setReview(id: string, mark: string): Promise<string> {
   await note(id, who, mark === "Not reviewed" ? "Cleared the review mark" : `Marked ${mark}`);
   return mark;
 }
+
+const emailOf = (value: FormDataEntryValue | null) => {
+  const text = String(value ?? "").trim().toLowerCase();
+  return /^[\w.+'-]+@[\w-]+(\.[\w-]+)+$/.test(text) ? text : null;
+};
+
+/** Someone we email about this business: the email copier copies their emails to it. */
+export async function addContact(form: FormData): Promise<void> {
+  const who = await requireUser();
+  const id = String(form.get("id"));
+  const email = emailOf(form.get("email"));
+  if (email) {
+    const role = ["Seller", "Broker", "Other"].includes(String(form.get("role"))) ? String(form.get("role")) : "Other";
+    const { error } = await db().from("contacts").upsert(
+      { business_id: id, email, name: words(form.get("name")), role, added_by: who }, { onConflict: "business_id,email" });
+    if (error) throw new Error(error.message);
+    await note(id, who, `Added ${email} to the contacts (${role.toLowerCase()})`);
+  }
+  redirect(back(form, link(id)));
+}
+
+export async function removeContact(form: FormData): Promise<void> {
+  const who = await requireUser();
+  const id = String(form.get("id"));
+  const email = emailOf(form.get("email"));
+  if (email) {
+    await db().from("contacts").delete().eq("business_id", id).eq("email", email);
+    await note(id, who, `Removed ${email} from the contacts`);
+  }
+  redirect(back(form, link(id)));
+}
+
+/** An email the copier couldn't place: its sender becomes a contact of the business Tom picks. */
+export async function linkUnmatched(form: FormData): Promise<void> {
+  const who = await requireUser();
+  const id = String(form.get("id") || "");
+  const gmailId = String(form.get("gmail_id") || "");
+  const { data } = await db().from("unmatched_mail").select("sender, sender_name").eq("gmail_id", gmailId).maybeSingle();
+  if (id && data?.sender) {
+    await db().from("contacts").upsert({ business_id: id, email: data.sender, name: data.sender_name, role: "Other", added_by: who },
+      { onConflict: "business_id,email" });
+    await db().from("unmatched_mail").delete().eq("sender", data.sender);
+    await note(id, who, `Added ${data.sender} to the contacts; the email copier will copy their emails on its next run`);
+  }
+  redirect("/pipeline#emails");
+}
+
+/** Not about any business: hide it, and the copier skips that sender from now on. */
+export async function dismissUnmatched(form: FormData): Promise<void> {
+  await requireUser();
+  const { data } = await db().from("unmatched_mail").select("sender").eq("gmail_id", String(form.get("gmail_id") || "")).maybeSingle();
+  if (data?.sender) await db().from("unmatched_mail").update({ dismissed: true }).eq("sender", data.sender);
+  redirect("/pipeline#emails");
+}
