@@ -6,7 +6,6 @@ Sheet stays in the database marked as off the Sheet, so anything tracked in the 
 import logging
 import os
 import re
-from collections import Counter
 from datetime import datetime, timezone
 
 import httpx
@@ -53,36 +52,60 @@ def sync(cfg: Config, store) -> int:
 
 
 def mark_copies(rows: list[dict], keep: set[str]) -> None:
-    """The same business on more than one site is shown once: each copy gets same_as, the shown one gets also_on."""
+    """A business is shown once: each copy gets same_as, the shown one gets also_on (with where each copy is)."""
     shown = same_business(rows, keep)
     by_id = {row["id"]: row for row in rows}
     for row in rows:
         row["same_as"], row["also_on"] = shown.get(row["id"]), []
     for copy, main in shown.items():
-        by_id[main]["also_on"].append({"site": by_id[copy]["site"], "url": by_id[copy]["url"], "id": copy})
+        c = by_id[copy]
+        by_id[main]["also_on"].append({"site": c["site"], "url": c["url"], "id": copy, "where": c.get("suburb") or ""})
     for row in rows:
-        row["tags"] = row["tags"] + [f"Also on {copy['site']}" for copy in row["also_on"]]
+        others = sorted({copy["site"] for copy in row["also_on"] if copy["site"] != row["site"]})
+        row["tags"] = row["tags"] + [f"Also on {site}" for site in others]
+        if any(copy["site"] == row["site"] for copy in row["also_on"]):
+            row["tags"] = row["tags"] + ["Posted more than once"]
 
 
 def same_business(rows: list[dict], keep: set[str]) -> dict[str, str]:
-    """Listings that are the same business as one on another site: copy's id -> the id of the listing to show.
+    """Listings that are the same business as another one: copy's id -> the id of the listing to show.
 
-    The same listing number means the same business, and different numbers mean different ones. Otherwise the title
-    must match closely and the price too, when both have one. A title a site uses more than once is a franchise with
-    one listing per territory, so those must also be in the same suburb. A business in the pipeline is always the one shown.
+    On one site, the same title at the same price is one business posted several times (sellers repost, and franchises
+    post one ad per town). Across sites, the same listing number means the same business and different numbers mean
+    different ones; otherwise the title must match closely and the price too, when both have one. A group never holds
+    two different businesses from one site. A business in the pipeline is always the one shown.
     """
     sale = [r for r in rows if r["kind"] == "sale" and r["status"] != "Removed"]
     titles = [_plain_title(r["name"]) for r in sale]
     numbers = [(_LISTING_NUMBER.findall(r["name"]) or [None])[0] for r in sale]
-    repeats = Counter((r["site"], t) for r, t in zip(sale, titles))
     parent = list(range(len(sale)))
-    sites = [{r["site"]} for r in sale]  # one site never lists the same business twice
+    sites = [{r["site"]} for r in sale]
 
     def root(i: int) -> int:
         while parent[i] != i:
             parent[i] = parent[parent[i]]
             i = parent[i]
         return i
+
+    def join(i: int, j: int) -> None:
+        a, b = root(i), root(j)
+        if a != b:
+            parent[b] = a
+            sites[a] |= sites[b]
+
+    # The same ad posted more than once on one site.
+    reposts: dict[tuple, int] = {}
+    for i, r in enumerate(sale):
+        if len(titles[i].split()) < 2:
+            continue
+        sameness = r["price"] if r["price"] else (r.get("description") or "").strip() or None
+        if sameness is None:
+            continue
+        key = (r["site"], titles[i], numbers[i], sameness)
+        if key in reposts:
+            join(reposts[key], i)
+        else:
+            reposts[key] = i
 
     def same(i: int, j: int) -> bool:
         a, b = sale[i], sale[j]
@@ -92,16 +115,14 @@ def same_business(rows: list[dict], keep: set[str]) -> dict[str, str]:
             return numbers[i] == numbers[j]
         if a["price"] and b["price"] and abs(a["price"] - b["price"]) > max(1000, 0.02 * max(a["price"], b["price"])):
             return False
-        if repeats[(a["site"], titles[i])] > 1 or repeats[(b["site"], titles[j])] > 1:
-            return bool(a["suburb"]) and (a["suburb"] or "").lower() == (b["suburb"] or "").lower()
         return True
 
+    # The same business on different sites.
     for i, title in enumerate(titles):
         for _, _, j in process.extract(title, titles, scorer=fuzz.token_set_ratio, score_cutoff=90, limit=None):
             a, b = root(i), root(j)
             if j > i and a != b and not sites[a] & sites[b] and same(i, j):
-                parent[b] = a
-                sites[a] |= sites[b]
+                join(i, j)
     groups: dict[int, list[dict]] = {}
     for i, row in enumerate(sale):
         groups.setdefault(root(i), []).append(row)

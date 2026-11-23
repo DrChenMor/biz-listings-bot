@@ -2,7 +2,9 @@ import Link from "next/link";
 import { Filters } from "@/components/filters";
 import { Shell } from "@/components/shell";
 import { requireUser } from "@/lib/auth";
+import { ReviewMark } from "@/components/review-mark";
 import { Business, db, link, nameOf, routeClass, when } from "@/lib/db";
+import { MARKS, PIPELINE_MARKS } from "@/lib/marks";
 
 export const dynamic = "force-dynamic";
 
@@ -17,9 +19,9 @@ const SITES = ["bsale", "business2sell", "AnyBusiness", "businessforsale.com.au"
 const PRICES = [50000, 100000, 200000, 300000, 500000, 750000, 1000000, 2000000];
 const FIGURES = [50000, 100000, 250000, 500000, 1000000];
 const FLAGS: [string, string][] = [["fresh", "New this week"], ["priced", "Has a price"], ["earning", "Shows profit"], ["phone", "Has a phone"], ["active", "Hide under offer"], ["archived", "Show archived"]];
+const MARK_FILTERS = [...MARKS, "In pipeline", "Passed"];
 
-/** IDs for a PostgREST in() list. They hold colons, so each is quoted. */
-const idList = (ids: string[]) => `(${ids.map((id) => `"${id.replace(/["\\]/g, "")}"`).join(",")})`;
+type Listed = Business & { display_name: string | null; mark: string };
 
 type Search = Record<string, string | undefined>;
 
@@ -37,24 +39,19 @@ export default async function Find({ searchParams }: { searchParams: Promise<Sea
   const term = (s.q ?? "").trim().toLowerCase().replace(/[%_,()]/g, " ");
   const suburb = (s.suburb ?? "").trim().replace(/[%_,()]/g, " ");
 
-  // Archived businesses stay out of Find unless asked for, and a business found by its real name counts as a match.
-  const { data: named } = await db().from("tracking").select("business_id, display_name, archived_at")
-    .or("archived_at.not.is.null,display_name.not.is.null");
-  const archived = (named ?? []).filter((t) => t.archived_at).map((t) => t.business_id);
-  const realNames = new Map((named ?? []).filter((t) => t.display_name).map((t) => [t.business_id, t.display_name as string]));
-  const byRealName = term ? [...realNames].filter(([, n]) => n.toLowerCase().includes(term)).map(([id]) => id) : [];
-
-  let query = db().from("businesses").select("id, kind, site, status, name, types, suburb, price_text, route, tags, first_seen, turnover, profit", { count: "exact" })
+  const marks = list(s.mark).filter((m) => MARK_FILTERS.includes(m));
+  // Find reads find_list: each business with its real name, archive flag and review mark. Archived ones stay out unless asked for.
+  let query = db().from("find_list").select("id, kind, site, status, name, display_name, mark, types, suburb, price_text, route, tags, first_seen, turnover, profit", { count: "exact" })
     .eq("on_sheet", true).neq("status", "Removed").is("same_as", null);
-  if (!s.archived && archived.length) query = query.not("id", "in", idList(archived));
+  if (!s.archived) query = query.is("archived_at", null);
+  if (marks.length) query = query.in("mark", marks);
   if (show !== "all") query = query.eq("kind", show);
   if (routes.length) query = query.in("route", routes);
   if (types.length) query = query.overlaps("types", types);
   if (area === "perth") query = query.eq("perth", true);
   if (s.site) query = query.eq("site", s.site);
   if (suburb) query = query.ilike("suburb", `%${suburb}%`);
-  if (term && byRealName.length) query = query.or(`search_text.ilike.%${term}%,id.in.${idList(byRealName)}`);
-  else if (term) query = query.ilike("search_text", `%${term}%`);
+  if (term) query = query.or(`search_text.ilike.%${term}%,display_name.ilike.%${term}%`);
   if (s.min) query = query.gte("price", Number(s.min));
   if (s.max) query = query.lte("price", Number(s.max)).gt("price", 0);
   if (s.turnover) query = query.gte("turnover", Number(s.turnover));
@@ -70,7 +67,7 @@ export default async function Find({ searchParams }: { searchParams: Promise<Sea
   else query = query.order("first_seen", { ascending: false, nullsFirst: false });
   const { data, count, error } = await query.order("id").range((page - 1) * PAGE, page * PAGE - 1);
   if (error) throw new Error(error.message);
-  const rows = (data ?? []) as unknown as Business[];
+  const rows = (data ?? []) as unknown as Listed[];
   const total = count ?? 0;
 
   /** This page's address with some filters changed. Changing a filter goes back to page 1. */
@@ -90,6 +87,7 @@ export default async function Find({ searchParams }: { searchParams: Promise<Sea
     ...routes.map((r) => ({ label: r, off: toggled("route", routes, r) })),
     ...types.map((t) => ({ label: t, off: toggled("type", types, t) })),
     ...FLAGS.filter(([key]) => s[key]).map(([key, label]) => ({ label, off: href({ [key]: undefined }) })),
+    ...marks.map((m) => ({ label: m, off: toggled("mark", marks, m) })),
     ...(suburb ? [{ label: suburb, off: href({ suburb: undefined }) }] : []),
     ...(s.site ? [{ label: s.site, off: href({ site: undefined }) }] : []),
     ...(s.min ? [{ label: `From ${dollars(Number(s.min))}`, off: href({ min: undefined }) }] : []),
@@ -118,6 +116,10 @@ export default async function Find({ searchParams }: { searchParams: Promise<Sea
         <div className="chips">
           {show !== "practice" ? SALE_ROUTES.map((r) => <Link key={r} className={routes.includes(r) ? "chip on" : "chip"} href={toggled("route", routes, r)}>{r}</Link>) : null}
           {FLAGS.map(([key, label]) => <Link key={key} className={s[key] ? "chip on" : "chip"} href={href({ [key]: s[key] ? undefined : "1" })}>{label}</Link>)}
+        </div>
+        <div className="chips" aria-label="Review marks">
+          <span className="lsub">Reviewed:</span>
+          {MARK_FILTERS.map((m) => <Link key={m} className={marks.includes(m) ? "chip on" : "chip"} href={toggled("mark", marks, m)}>{m}</Link>)}
         </div>
         <details className="more" open={Boolean(types.length)}>
           <summary>Type of business{types.length ? ` (${types.length})` : ""}</summary>
@@ -155,16 +157,17 @@ export default async function Find({ searchParams }: { searchParams: Promise<Sea
           </label>
         </div>
       </Filters>
-      <div className="head"><span className="c1">Business</span><span className="c2">Route</span><span className="c3">Details</span><span className="c4">Price</span><span className="c5">Added</span></div>
+      <div className="head"><span className="c1">Business</span><span className="c2">Route</span><span className="c3">Details</span><span className="c4">Price</span><span className="c5">Added</span><span className="c6">Reviewed</span></div>
       <div className="list">
         {rows.map((b) => (
-          <Link className="row" key={b.id} href={link(b.id)}>
-            <span className="c1"><span className="ltitle">{nameOf(b, { display_name: realNames.get(b.id) })}{archived.includes(b.id) ? " (archived)" : ""}</span><span className="lsub">{[realNames.has(b.id) ? `Listed as: ${b.name}` : null, b.types[0], b.suburb].filter(Boolean).join(" · ")}</span></span>
+          <div className="row" key={b.id}>
+            <span className="c1"><Link className="rowlink" href={link(b.id)}><span className="ltitle">{nameOf(b, b)}</span></Link><span className="lsub">{[b.display_name ? `Listed as: ${b.name}` : null, b.types[0], b.suburb].filter(Boolean).join(" · ")}</span></span>
             <span className="c2"><span className={routeClass(b.route)}>{b.route}</span></span>
             <span className="c3">{b.tags.map((t) => <span className="tag" key={t}>{t}</span>)}</span>
             <span className="c4 fig">{b.price_text}</span>
             <span className="c5 lsub">{when(b.first_seen)}</span>
-          </Link>
+            <span className="c6"><ReviewMark key={b.mark} id={b.id} mark={b.mark} name={nameOf(b, b)} /></span>
+          </div>
         ))}
       </div>
       {rows.length === 0 ? <p className="note">Nothing matches. Try removing a tag.</p> : null}

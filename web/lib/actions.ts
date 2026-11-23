@@ -5,6 +5,7 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { endSession, passwordIsRight, requireUser, startSession } from "./auth";
 import { BY_HAND, db, link, nameOf, NEXT_STAGE, PASSED, STAGES, today } from "./db";
+import { MARKS } from "./marks";
 import { acquisitionsId, folderName, passedId } from "./drive";
 import { connection, createFolder, disconnect, moveFile, renameFile, saveDoc, startUpload } from "./google";
 import { isKind, SHEETS, worksheetHtml } from "./worksheets";
@@ -327,4 +328,25 @@ export async function deleteBusiness(form: FormData): Promise<void> {
   const { error } = await db().from("businesses").delete().eq("id", id);
   if (error) throw new Error(error.message);
   redirect("/pipeline?view=archive");
+}
+
+/**
+ * Mark a listing as looked at, from Find or its page. "Add to pipeline" puts it on the Shortlist, which counts as
+ * reviewed. Returns the mark to show. Everyone signed in sees the same marks.
+ */
+export async function setReview(id: string, mark: string): Promise<string> {
+  const who = await requireUser();
+  if (mark === "Add to pipeline") {
+    const { data: tracked } = await db().from("tracking").select("stage").eq("business_id", id).maybeSingle();
+    if (!tracked) await moveTo(id, "Shortlist", who);
+    return "In pipeline";
+  }
+  if (!MARKS.includes(mark)) throw new Error("Unknown mark");
+  const reviews = db().from("reviews");
+  const { error } = mark === "Not reviewed"
+    ? await reviews.delete().eq("business_id", id)
+    : await reviews.upsert({ business_id: id, mark, marked_by: who, marked_at: new Date().toISOString() });
+  if (error) throw new Error(error.message);
+  await note(id, who, mark === "Not reviewed" ? "Cleared the review mark" : `Marked ${mark}`);
+  return mark;
 }

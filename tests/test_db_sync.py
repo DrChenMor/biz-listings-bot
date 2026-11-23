@@ -44,7 +44,7 @@ def test_the_same_listing_on_two_sites_is_shown_once():
             listing("cre:1", "commercialrealestate.com.au", "Turnkey carpet cleaning business for sale", 59000)]
     db_sync.mark_copies(rows, set())
     assert rows[0]["same_as"] == "cre:1" and rows[1]["same_as"] is None
-    assert rows[1]["also_on"] == [{"site": "bsale", "url": "https://bsale/bsale:1", "id": "bsale:1"}]
+    assert rows[1]["also_on"] == [{"site": "bsale", "url": "https://bsale/bsale:1", "id": "bsale:1", "where": ""}]
     assert "Also on bsale" in rows[1]["tags"]
 
 
@@ -68,10 +68,23 @@ def test_a_different_price_is_a_different_business():
     assert db_sync.same_business(rows, set()) == {}
 
 
-def test_franchise_territories_must_share_a_suburb():
+def test_franchise_towns_at_one_price_are_shown_once():
     rows = [listing("bsale:1", "bsale", "Black Optix Tint Franchise", 200000, "Joondalup"), listing("bsale:2", "bsale", "Black Optix Tint Franchise", 200000, "Rockingham"),
             listing("b2s:1", "business2sell", "Black Optix Tint Franchise", 200000, "Rockingham", "2026-11-03T08:00:00+08:00")]
-    assert db_sync.same_business(rows, set()) == {"b2s:1": "bsale:2"}
+    assert db_sync.same_business(rows, set()) == {"bsale:2": "bsale:1", "b2s:1": "bsale:1"}
+
+
+def test_an_ad_posted_again_on_one_site_is_shown_once():
+    rows = [listing(f"b2s:3340{n}", "business2sell", "Growing home based service business in Garden Maintenance", 92000, "Morley") for n in range(19, 24)]
+    db_sync.mark_copies(rows, set())
+    assert [r["same_as"] for r in rows] == [None] + ["b2s:334019"] * 4
+    assert len(rows[0]["also_on"]) == 4 and rows[0]["also_on"][0]["where"] == "Morley"
+    assert "Posted more than once" in rows[0]["tags"] and not any(t.startswith("Also on") for t in rows[0]["tags"])
+
+
+def test_one_site_with_the_same_title_at_another_price_is_another_business():
+    rows = [listing("bsale:1", "bsale", "Chem-dry Carpet Cleaning Franchise", 24900, "Bunbury"), listing("bsale:2", "bsale", "Chem-dry Carpet Cleaning Franchise", 185000, "Perth")]
+    assert db_sync.same_business(rows, set()) == {}
 
 
 def test_a_group_never_holds_two_listings_from_one_site():

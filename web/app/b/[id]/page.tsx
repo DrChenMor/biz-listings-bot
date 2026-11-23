@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { AgentCard } from "@/components/agent-card";
 import { DealCardForm } from "@/components/deal-card";
 import { DriveCard } from "@/components/drive-card";
+import { ReviewMark } from "@/components/review-mark";
 import { Shell } from "@/components/shell";
 import { addNote, archiveBusiness, restoreBusiness, setNextStep } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
@@ -21,6 +22,8 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
   const { data: log } = await db().from("activity").select("*").eq("business_id", id).order("at", { ascending: false }).limit(30);
   const broker = b.route === "Via broker";
   const name = nameOf(b, tracking);
+  const { data: review } = await db().from("reviews").select("mark").eq("business_id", id).maybeSingle();
+  const mark = tracking?.archived_at ? "Archived" : tracking?.stage === "Passed" ? "Passed" : tracking ? "In pipeline" : review?.mark ?? "Not reviewed";
 
   return (
     <Shell user={user} active="/find">
@@ -30,7 +33,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
           <h1>{name}</h1>
           {name !== b.name ? <p className="headline">Listed as: {b.name}</p> : null}
           <p className="lede" style={{ marginBottom: 8 }}>{[b.types[0], b.suburb, b.status].filter(Boolean).join(" · ")}</p>
-          <span className={routeClass(b.route)}>{b.route}</span>
+          <span className="actions"><span className={routeClass(b.route)}>{b.route}</span><ReviewMark key={mark} id={b.id} mark={mark} name={name} /></span>
         </div>
         <div className="actions">
           {b.phone ? <a className="btn primary" href={`tel:${b.phone.split(";")[0].replace(/[^+\d]/g, "")}`}>Call {b.phone.split(";")[0]}</a> : null}
@@ -45,7 +48,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
         </div>
       ) : null}
       {b.same_as ? <p className="note">This is the same business as <Link href={link(b.same_as)}>another listing</Link>, which is the one shown in Find.</p> : null}
-      {b.also_on?.length ? <p className="note">Also listed on {b.also_on.map((c, i) => <span key={c.id}>{i ? ", " : ""}{c.url ? <a href={c.url} target="_blank" rel="noreferrer">{c.site}</a> : c.site}</span>)}.</p> : null}
+      {b.also_on?.length ? <p className="note">Also listed (or posted again) on {b.also_on.map((c, i) => <span key={c.id}>{i ? ", " : ""}{c.url ? <a href={c.url} target="_blank" rel="noreferrer">{c.site}{c.where ? ` (${c.where})` : ""}</a> : c.site}</span>)}.</p> : null}
       {broker ? <p className="note">This listing stays with the broker. Contact goes through them.</p> : null}
       {b.route === "Needs a pharmacist" ? <p className="note warn">In WA, only pharmacists and certain companies and partnerships they control can own a pharmacy.</p> : null}
       {b.on_sheet || b.site === BY_HAND ? null : <p className="note warn">This business has left the Sheet, so it may be sold or gone.</p>}
