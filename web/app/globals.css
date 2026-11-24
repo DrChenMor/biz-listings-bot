@@ -218,3 +218,13 @@ select.mark { cursor: pointer; padding-right: 6px; }
 .mail .writing { margin-top: 8px; }
 .steps { margin: 8px 0 0; padding-left: 20px; }
 .steps li { margin: 6px 0; }
+/* Concise cards: name in two lines at most, one-line details, figures inline. */
+.dcard { gap: 4px; padding: 14px 14px 10px; }
+.dname { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; line-height: 1.3; }
+.dclip { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dfigs { display: flex; flex-wrap: wrap; gap: 2px 12px; color: var(--quiet); }
+.dfigs b { color: var(--ink); font-weight: 600; }
+.dstage { margin-top: 6px; }
+.dstagepick { width: 100%; min-height: 36px; font-size: 14px; }
+.dsmall { flex-wrap: wrap; gap: 4px 14px; margin-top: auto; }
+.dsmall .plain { min-height: 28px; padding: 2px 0; }

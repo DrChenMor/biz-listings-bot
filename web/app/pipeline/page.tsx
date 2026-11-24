@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Shell } from "@/components/shell";
 import { ConfirmButton } from "@/components/confirm-button";
+import { StageSelect } from "@/components/stage-select";
 import { addBusiness, addFromFolder, archiveBusiness, binFolder, deleteBusiness, dismissUnmatched, followedUp, linkFolder, linkUnmatched, restoreBusiness, setStage } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 import { BY_HAND, Business, dealCard, db, link, money, nameOf, PASSED, STAGES, Tracking, when } from "@/lib/db";
@@ -20,11 +21,14 @@ const VIEWS: Record<string, { label: string; shows: (r: Row) => boolean }> = {
 
 const stageLink = (stage: string) => `/pipeline?stage=${encodeURIComponent(stage)}`;
 
-function Figure({ label, value }: { label: string; value: number | null }) {
-  return <div><dt>{label}</dt><dd className="fig">{value ? money(value) : "—"}</dd></div>;
+/** $710k, $3.6M: short enough for a card. */
+function short(value: number): string {
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(value >= 10_000_000 ? 0 : 1).replace(/\.0$/, "")}M`;
+  if (value >= 1_000) return `$${Math.round(value / 1_000)}k`;
+  return money(value);
 }
 
-/** Archive and Delete, as two small buttons. Delete asks first; archive is undone with Restore. */
+/** The small links at the bottom of a card. Delete asks first; archive is undone with Restore. */
 function CardActions({ row, name, hidden }: { row: Row; name: string; hidden: (more?: Record<string, string>) => React.ReactNode }) {
   const byHand = row.businesses.site === BY_HAND;
   const deleteQuestion = byHand
@@ -32,6 +36,9 @@ function CardActions({ row, name, hidden }: { row: Row; name: string; hidden: (m
     : `Delete ${name}? It leaves the pipeline with its card and worksheets, and is marked Not for us in Find. The Drive folder stays.`;
   return (
     <div className="dsmall">
+      {!row.archived_at && row.drive_folder_id ? <a className="plain dark" href={folderLink(row.drive_folder_id)} target="_blank" rel="noreferrer">Drive</a> : null}
+      {!row.archived_at && row.stage === "Approached"
+        ? <form action={followedUp}>{hidden()}<button type="submit" className="plain dark">Followed up today</button></form> : null}
       {row.archived_at
         ? <form action={restoreBusiness}>{hidden()}<button type="submit" className="plain dark">Restore</button></form>
         : <form action={archiveBusiness}>{hidden({ move_folder: "yes" })}<button type="submit" className="plain dark" title="Takes it off every list and moves its Drive folder to Passed. Restore brings it back.">Archive</button></form>}
@@ -55,35 +62,22 @@ function DealCard({ row, here }: { row: Row; here: string }) {
       </article>
     );
   }
+  // Only the figures we know, on one line: no rows of dashes.
+  const figures = ([["Asking", card.asking], ["Turnover", card.turnover], ["Expenses", card.expenses], ["Profit", card.profit]] as const)
+    .filter(([, value]) => value);
+  const dates = [row.approached_on ? `Approached ${when(row.approached_on)}` : "", row.followed_up_on ? `followed up ${when(row.followed_up_on)}` : ""]
+    .filter(Boolean).join(" · ");
   return (
     <article className="dcard">
-      <Link href={link(b.id)} className="dname">{name}</Link>
-      {name !== b.name ? <span className="lsub">Listed as: {b.name}</span> : null}
+      <Link href={link(b.id)} className="dname" title={name !== b.name ? `Listed as: ${b.name}` : name}>{name}</Link>
+      <span className="lsub dclip">{[card.location, card.product].filter(Boolean).join(" · ")}</span>
       {b.status === "Removed" ? <span className="pill r-stop">Listing ended</span> : null}
-      <span className="lsub">{[card.location, card.product].filter(Boolean).join(" · ")}</span>
-      <dl className="dfacts">
-        <Figure label="Asking" value={card.asking} />
-        <Figure label="Turnover" value={card.turnover} />
-        <Figure label="Expenses" value={card.expenses} />
-        <Figure label="Profit" value={card.profit} />
-      </dl>
-      {card.sellingReason ? <p className="dline"><b>Selling:</b> {card.sellingReason}</p> : null}
-      {card.underManagement ? <p className="dline"><b>Under management:</b> {card.underManagement}</p> : null}
-      <p className="dline lsub">
-        {row.approached_on ? `Approached ${when(row.approached_on)}` : "Not approached yet"}
-        {row.followed_up_on ? ` · followed up ${when(row.followed_up_on)}` : ""}
-      </p>
-      {row.next_step ? <p className="dline"><b>Next:</b> {row.next_step}{row.next_due ? ` (by ${when(row.next_due)})` : ""}</p> : null}
-      {row.drive_folder_id ? <a className="dline" href={folderLink(row.drive_folder_id)} target="_blank" rel="noreferrer">Drive folder</a> : null}
-      {row.stage === "Approached" ? (
-        <form action={followedUp}>{hidden()}<button type="submit" className="pmove">Followed up today</button></form>
-      ) : null}
+      {figures.length ? <p className="dline dfigs">{figures.map(([label, value]) => <span key={label}>{label} <b className="fig">{short(value as number)}</b></span>)}</p> : null}
+      {card.sellingReason ? <p className="dline dclip"><b>Selling:</b> {card.sellingReason}</p> : null}
+      {dates ? <p className="dline lsub">{dates}</p> : null}
+      {row.next_step ? <p className="dline dclip"><b>Next:</b> {row.next_step}{row.next_due ? ` (by ${when(row.next_due)})` : ""}</p> : null}
       <form action={setStage} className="dstage">
-        {hidden()}
-        <select name="stage" aria-label={`Stage for ${name}`} defaultValue={row.stage}>
-          {[...STAGES, PASSED].map((s) => <option key={s}>{s}</option>)}
-        </select>
-        <button type="submit" className="btn">Move</button>
+        <StageSelect stages={[...STAGES, PASSED]} current={row.stage} label={`Stage for ${name}`}>{hidden()}</StageSelect>
       </form>
       <CardActions row={row} name={name} hidden={hidden} />
     </article>
