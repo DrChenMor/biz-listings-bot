@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Shell } from "@/components/shell";
 import { ConfirmButton } from "@/components/confirm-button";
 import { StageSelect } from "@/components/stage-select";
+import { NameSuggestion, NameSuggestions } from "@/components/name-suggestions";
 import { addBusiness, addFromFolder, archiveBusiness, binFolder, deleteBusiness, dismissUnmatched, followedUp, linkFolder, linkUnmatched, restoreBusiness, setStage } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 import { BY_HAND, Business, dealCard, db, link, money, nameOf, PASSED, STAGES, Tracking, when } from "@/lib/db";
@@ -47,7 +48,7 @@ function CardActions({ row, name, hidden }: { row: Row; name: string; hidden: (m
   );
 }
 
-function DealCard({ row, here }: { row: Row; here: string }) {
+function DealCard({ row, here, names }: { row: Row; here: string; names: NameSuggestion[] }) {
   const b = row.businesses;
   const card = dealCard(b, row);
   const name = nameOf(b, row);
@@ -71,6 +72,7 @@ function DealCard({ row, here }: { row: Row; here: string }) {
     <article className="dcard">
       <Link href={link(b.id)} className="dname" title={name !== b.name ? `Listed as: ${b.name}` : name}>{name}</Link>
       <span className="lsub dclip">{[card.location, card.product].filter(Boolean).join(" · ")}</span>
+      <NameSuggestions suggestions={names} back={here} compact />
       {b.status === "Removed" ? <span className="pill r-stop">Listing ended</span> : null}
       {figures.length ? <p className="dline dfigs">{figures.map(([label, value]) => <span key={label}>{label} <b className="fig">{short(value as number)}</b></span>)}</p> : null}
       {card.sellingReason ? <p className="dline dclip"><b>Selling:</b> {card.sellingReason}</p> : null}
@@ -107,6 +109,8 @@ export default async function Pipeline({ searchParams }: { searchParams: Promise
     .eq("dismissed", false).order("sent_at", { ascending: false }).limit(30);
   const unmatched = unmatchedData ?? [];
   const inPipeline = live.filter((r) => r.stage !== PASSED);
+  const { data: nameData } = await db().from("name_suggestions").select("id, business_id, name, source, evidence").eq("status", "new").order("found_at");
+  const namesFor = (id: string) => ((nameData ?? []) as NameSuggestion[]).filter((n) => n.business_id === id);
   const overview = view === "active" || view === "all";
   const groups = stage ? [stage] : view === "archive" ? ["Archived"] : view === "passed" ? [PASSED] : view === "all" ? [...STAGES, PASSED] : STAGES;
 
@@ -133,7 +137,7 @@ export default async function Pipeline({ searchParams }: { searchParams: Promise
         return inGroup.length ? (
           <section key={group} className="stagesec">
             <h2>{group} <span className="lsub">({inGroup.length})</span></h2>
-            <div className="dcards">{inGroup.map((row) => <DealCard key={row.business_id} row={row} here={here} />)}</div>
+            <div className="dcards">{inGroup.map((row) => <DealCard key={row.business_id} row={row} here={here} names={namesFor(row.business_id)} />)}</div>
           </section>
         ) : null;
       })}

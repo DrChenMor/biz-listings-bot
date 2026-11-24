@@ -420,3 +420,22 @@ export async function dismissUnmatched(form: FormData): Promise<void> {
   if (data?.sender) await db().from("unmatched_mail").update({ dismissed: true }).eq("sender", data.sender);
   redirect("/pipeline#emails");
 }
+
+/** A real name the name finder found in the documents: Accept puts it on the card. */
+export async function acceptName(form: FormData): Promise<void> {
+  const who = await requireUser();
+  const suggestion = Number(form.get("suggestion"));
+  const { data } = await db().from("name_suggestions").select("business_id, name, source").eq("id", suggestion).maybeSingle();
+  if (data) {
+    await saveTracking(data.business_id, { display_name: data.name.slice(0, 120) });
+    await db().from("name_suggestions").update({ status: "accepted" }).eq("id", suggestion);
+    await note(data.business_id, who, `Renamed to ${data.name} (found by the name finder: ${data.source})`);
+  }
+  redirect(back(form, data ? link(data.business_id) : "/pipeline"));
+}
+
+export async function ignoreName(form: FormData): Promise<void> {
+  await requireUser();
+  await db().from("name_suggestions").update({ status: "ignored" }).eq("id", Number(form.get("suggestion")));
+  redirect(back(form, "/pipeline"));
+}

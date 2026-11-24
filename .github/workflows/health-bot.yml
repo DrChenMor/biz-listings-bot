@@ -49,3 +49,9 @@ jobs:
         if: env.SUPABASE_URL != ''
         continue-on-error: true
         run: python -m bizbot sync-db
+
+      # Suggests real business names from new files in the pipeline's Drive folders (ABNs and file names). Free, no AI.
+      - name: Find real business names
+        if: env.SUPABASE_URL != ''
+        continue-on-error: true
+        run: python -m bizbot names

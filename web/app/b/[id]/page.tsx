@@ -6,6 +6,7 @@ import { DealCardForm } from "@/components/deal-card";
 import { DriveCard } from "@/components/drive-card";
 import { CommunicationCard, ContactsCard } from "@/components/mail-cards";
 import { ReviewMark } from "@/components/review-mark";
+import { NameSuggestion, NameSuggestions } from "@/components/name-suggestions";
 import { Shell } from "@/components/shell";
 import { addNote, archiveBusiness, deleteBusiness, restoreBusiness, setNextStep } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
@@ -25,6 +26,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
   const broker = b.route === "Via broker";
   const name = nameOf(b, tracking);
   const { data: review } = await db().from("reviews").select("mark").eq("business_id", id).maybeSingle();
+  const { data: nameData } = await db().from("name_suggestions").select("id, business_id, name, source, evidence").eq("business_id", id).eq("status", "new").order("found_at");
   const mark = tracking?.archived_at ? "Archived" : tracking?.stage === "Passed" ? "Passed" : tracking ? "In pipeline" : review?.mark ?? "Not reviewed";
 
   return (
@@ -43,6 +45,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
           {b.map_url ? <a className="btn" href={b.map_url} target="_blank" rel="noreferrer">Map</a> : null}
         </div>
       </div>
+      <NameSuggestions suggestions={(nameData ?? []) as NameSuggestion[]} back={link(b.id)} />
       {tracking?.archived_at ? (
         <div className="note warn archived" role="status">
           <span>Archived {when(tracking.archived_at)}{tracking.archived_by ? ` by ${tracking.archived_by}` : ""}. It's hidden from Pipeline, Today and Find.</span>
