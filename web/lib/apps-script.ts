@@ -36,7 +36,7 @@ function setup() {
 }
 
 function copyEmails() {
-  var copied = 0, unmatched = 0, problem = '';
+  var copied = 0, unmatched = 0, skipped = 0, problem = '';
   try {
     var info = api_('get', '/api/mail');
     var ids = {};
@@ -57,7 +57,11 @@ function copyEmails() {
 
     var all = Object.keys(ids);
     for (var start = 0; start < all.length; start += 20) {
-      var batch = all.slice(start, start + 20).map(read_);
+      // One email Google can't hand over cleanly is skipped and counted, rather than stopping the whole run.
+      var batch = all.slice(start, start + 20).map(function (id) {
+        try { return read_(id); } catch (e) { skipped++; console.log('Skipped email ' + id + ': ' + e); return null; }
+      }).filter(function (m) { return m; });
+      if (!batch.length) continue;
       var reply = api_('post', '/api/mail', { messages: batch.map(function (m) { return m.summary; }) });
       reply.results.forEach(function (result) {
         if (result.unmatched) unmatched++;
@@ -75,7 +79,7 @@ function copyEmails() {
   } catch (e) {
     problem = String(e && e.message || e);
   }
-  try { api_('post', '/api/mail/done', { copied: copied, unmatched: unmatched, error: problem }); } catch (ignored) {}
+  try { api_('post', '/api/mail/done', { copied: copied, unmatched: unmatched, skipped: skipped, error: problem }); } catch (ignored) {}
   if (problem) throw new Error(problem);
 }
 
@@ -111,8 +115,16 @@ function walk_(part, plain, html, files) {
   (part.parts || []).forEach(function (p) { walk_(p, plain, html, files); });
 }
 
+/** Gmail API content arrives as web-safe base64, sometimes without its padding, or already as a list of bytes. */
+function bytes_(data) {
+  if (Array.isArray(data)) return data;
+  var text = String(data || '').replace(/-/g, '+').replace(/_/g, '/').replace(/\s/g, '');
+  while (text.length % 4) text += '=';
+  return Utilities.base64Decode(text);
+}
+
 function decode_(data) {
-  return Utilities.newBlob(Utilities.base64DecodeWebSafe(data)).getDataAsString('UTF-8');
+  return Utilities.newBlob(bytes_(data)).getDataAsString('UTF-8');
 }
 
 /** Adds the email to the bottom of the folder's Communication doc, making the doc if there isn't one. */
@@ -141,7 +153,7 @@ function saveAttachments_(folder, message) {
   message.files.forEach(function (f) {
     if (folder.getFilesByName(f.name).hasNext()) return;
     var data = Gmail.Users.Messages.Attachments.get('me', message.id, f.attachmentId).data;
-    folder.createFile(Utilities.newBlob(Utilities.base64DecodeWebSafe(data), f.type, f.name));
+    folder.createFile(Utilities.newBlob(bytes_(data), f.type, f.name));
   });
 }
 
