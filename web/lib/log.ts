@@ -4,7 +4,7 @@
  */
 import { db } from "./db";
 
-export type LogKind = "sign-in" | "problem" | "error" | "email";
+export type LogKind = "sign-in" | "problem" | "error" | "email" | "action";
 
 export async function logEvent(kind: LogKind, what: string, detail?: string | null, who?: string | null, path?: string | null): Promise<void> {
   try {

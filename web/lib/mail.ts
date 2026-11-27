@@ -96,6 +96,20 @@ export function matchBusinesses(mail: IncomingMail, contacts: ContactRow[], busi
   return named.length ? named : ids;
 }
 
+/**
+ * Businesses an email names by listing number, like "[Bsale ID: 690959]" or "Ref 37306" in the subject or text.
+ * Only numbers that are exactly a pipeline business's listing number count, so a phone number or price can't match.
+ */
+export function byListingNumber(mail: IncomingMail, businesses: Map<string, Business>): string[] {
+  const numbers = new Set((`${mail.subject ?? ""}\n${(mail.body ?? "").slice(0, 3000)}`.match(/\b\d{5,8}\b/g) ?? []));
+  if (!numbers.size) return [];
+  return [...businesses.values()].filter((b) => {
+    const own = b.id.split(":")[1] ?? "";
+    const titled = nameOf(b, b).match(/\b\d{5}\b/)?.[0];
+    return (/^\d{5,8}$/.test(own) && numbers.has(own)) || (titled !== undefined && numbers.has(titled));
+  }).map((b) => b.id);
+}
+
 /** Perth calendar day of an email, as the database stores dates: 2026-11-17. */
 function perthDay(iso: string): string {
   return new Date(iso).toLocaleDateString("en-CA", { timeZone: "Australia/Perth" });
@@ -114,6 +128,8 @@ export async function datesFromTomsEmail(businessId: string, sentAt: string): Pr
   else if (day > data.approached_on && (!data.followed_up_on || day > data.followed_up_on)) change.followed_up_on = day;
   if (Object.keys(change).length) await db().from("tracking").update(change).eq("business_id", businessId);
 }
+
+const DEALS_INBOX = "contacttomharari@gmail.com";
 
 const IGNORED_SENDER = /(no-?reply|do-?not-?reply|notifications?|mailer-daemon|postmaster|newsletter|alerts?)@/i;
 
@@ -142,7 +158,21 @@ export async function saveMail(batch: IncomingMail[]): Promise<{ id: string; tar
   for (const mail of batch) {
     if (!mail.id || !mail.date || !mail.from) continue;
     const sender = addresses(mail.from)[0] ?? "";
-    const matched = matchBusinesses(mail, contacts ?? [], businesses);
+    let matched = matchBusinesses(mail, contacts ?? [], businesses);
+    if (!matched.length) {
+      // No contact yet, but the email names the listing: file it there, and remember the other person as a contact.
+      matched = byListingNumber(mail, businesses);
+      const other = sender !== DEALS_INBOX ? sender : addresses(mail.to).find((a) => a !== DEALS_INBOX) ?? "";
+      for (const id of other && !IGNORED_SENDER.test(other) ? matched : []) {
+        const { error } = await db().from("contacts").upsert({
+          business_id: id, email: other, name: sender === other ? displayName(mail.from) : null, role: "Broker", added_by: "Email copier",
+        }, { onConflict: "business_id,email", ignoreDuplicates: true });
+        if (!error) {
+          contacts?.push({ business_id: id, email: other });
+          await db().from("activity").insert({ business_id: id, who: "Email copier", text: `Added ${other} to the contacts: their email named this listing` });
+        }
+      }
+    }
     if (!matched.length) {
       const skip = !sender || IGNORED_SENDER.test(sender) || ignored.has(sender);
       if (!skip) {
@@ -179,7 +209,6 @@ export async function saveMail(batch: IncomingMail[]): Promise<{ id: string; tar
   return results;
 }
 
-const DEALS_INBOX = "contacttomharari@gmail.com";
 
 /**
  * A link that opens Tom's deals Gmail ready to follow up: the last email thread with the business's contacts if there

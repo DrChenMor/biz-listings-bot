@@ -6,3 +6,4 @@ data/
 *service-account*.json
 *-key.json
 backups/
+logs/

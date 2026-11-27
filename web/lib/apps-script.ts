@@ -15,6 +15,7 @@ export const MANIFEST = JSON.stringify({
     "https://www.googleapis.com/auth/documents",
     "https://www.googleapis.com/auth/script.external_request",
     "https://www.googleapis.com/auth/script.scriptapp",
+    "https://www.googleapis.com/auth/script.send_mail",
   ],
 }, null, 2);
 
@@ -22,7 +23,8 @@ export const SCRIPT = String.raw`/**
  * Deal desk email copier.
  * Copies emails to and from each business's contacts into the business's Communication doc in Drive, saves their
  * attachments into the business's folder, and sends a copy to the Deal desk website for its Communication timeline.
- * It only READS Gmail (read-only permission): it never sends, deletes, labels or marks anything.
+ * It only READS Gmail (read-only permission): it never deletes, labels or marks anything. The one email it sends is
+ * the Deal desk morning update, to Tom himself.
  *
  * Setup, once: Project Settings > Script properties > add DEAL_DESK_URL and DEAL_DESK_KEY, then run setup().
  */
@@ -80,7 +82,16 @@ function copyEmails() {
     problem = String(e && e.message || e);
   }
   try { api_('post', '/api/mail/done', { copied: copied, unmatched: unmatched, skipped: skipped, error: problem }); } catch (ignored) {}
+  try { sendMorningEmail(); } catch (e) { console.log('Morning email not sent: ' + e); }
   if (problem) throw new Error(problem);
+}
+
+/** The Deal desk morning update, sent to Tom himself, and only when there's something new. Run it to see one now. */
+function sendMorningEmail() {
+  var digest = api_('get', '/api/digest');
+  if (!digest.send) return;
+  var me = Gmail.Users.getProfile('me').emailAddress;
+  MailApp.sendEmail({ to: me, subject: digest.subject, htmlBody: digest.html, body: digest.text, name: 'Deal desk' });
 }
 
 /** One email, read through the Gmail API: its headers, plain text and attachment list. */

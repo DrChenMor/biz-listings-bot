@@ -93,3 +93,22 @@ def test_a_group_never_holds_two_listings_from_one_site():
             listing("bsale:2", "bsale", "Fully Promoted Franchise Opportunity Premium", 170000, first_seen="2026-11-02T08:00:00+08:00")]
     copies = db_sync.same_business(rows, set())
     assert len(copies) == 1 and set(copies.values()) == {"cre:1"}
+
+
+def test_a_price_drop_is_noted_and_kept():
+    rows = [{"id": "bsale:1", "price": 400000, "status": "Active"}, {"id": "bsale:2", "price": 299000, "status": "Active"},
+            {"id": "bsale:3", "price": 500000, "status": "Active"}]
+    existing = {"bsale:1": {"price": 450000, "status": "Active"}, "bsale:2": {"price": 300000, "status": "Active"},
+                "bsale:3": {"price": 500000, "status": "Active", "previous_price": 600000, "price_dropped_at": "2026-11-01"}}
+    db_sync.note_changes(rows, existing, "2026-11-27T12:00:00+00:00")
+    assert (rows[0]["previous_price"], rows[0]["price_dropped_at"]) == (450000, "2026-11-27T12:00:00+00:00")
+    assert rows[1]["price_dropped_at"] is None  # $1,000 less is not a drop
+    assert (rows[2]["previous_price"], rows[2]["price_dropped_at"]) == (600000, "2026-11-01")  # an earlier drop stays
+
+
+def test_a_listing_ending_now_gets_a_date_but_old_ones_do_not():
+    rows = [{"id": "a", "status": "Removed"}, {"id": "b", "status": "Removed"}, {"id": "c", "status": "Removed"}, {"id": "d", "status": "Active"}]
+    existing = {"a": {"status": "Active"}, "b": {"status": "Removed"}, "c": {"status": "Removed", "ended_at": "2026-11-20"},
+                "d": {"status": "Removed", "ended_at": "2026-11-20"}}
+    db_sync.note_changes(rows, existing, "now")
+    assert [r["ended_at"] for r in rows] == ["now", None, "2026-11-20", None]

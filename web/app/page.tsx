@@ -2,6 +2,7 @@ import Link from "next/link";
 import { Shell } from "@/components/shell";
 import { requireUser } from "@/lib/auth";
 import { db, link, nameOf, when } from "@/lib/db";
+import { FOLLOW_UP_AFTER_DAYS, followUpsDue } from "@/lib/followups";
 
 export const dynamic = "force-dynamic";
 
@@ -28,6 +29,7 @@ export default async function Today() {
   const newest = (fresh ?? []).map((b: any) => ({ ...b, tracking: Array.isArray(b.tracking) ? b.tracking[0] : b.tracking }))
     .filter((b: any) => !b.tracking?.archived_at).slice(0, 8);
   const { data: runs } = await db().from("site_runs").select("*").order("site");
+  const due = await followUpsDue();
 
   return (
     <Shell user={user} active="/">
@@ -40,6 +42,17 @@ export default async function Today() {
         <Link className="stat" href="/find?show=practice&area=all"><span className="statnum">{practices.toLocaleString()}</span><span className="statlab">Health practices</span></Link>
       </div>
       <div className="cards">
+        <section className="card"><h2>Follow up due {due.length ? <span className="lsub">({due.length})</span> : null}</h2>
+          <p className="lsub">Approached, and no email or follow-up for {FOLLOW_UP_AFTER_DAYS} days or more. Oldest first.</p>
+          {due.length ? due.slice(0, 8).map((d) => (
+            <div className="item duerow" key={d.id}>
+              <Link href={d.page} className="ltitle">{d.name}</Link>
+              <span className="lsub">{d.last ? `${d.days} days since ${when(d.last)}` : "No approach date yet"}
+                {d.follow ? <> · <a href={d.follow} target="_blank" rel="noreferrer">Follow up</a></> : <> · <Link href={d.page}>add a contact to email them</Link></>}</span>
+            </div>
+          )) : <p className="lsub">Nothing due. Every approached business has had contact this week.</p>}
+          {due.length > 8 ? <Link className="lsub" href="/pipeline?stage=Approached">and {due.length - 8} more on the Pipeline</Link> : null}
+        </section>
         <section className="card"><h2>Do next</h2>
           {steps?.length ? steps.map((s: any) => (
             <Link className="item" key={s.business_id} href={link(s.business_id)}>

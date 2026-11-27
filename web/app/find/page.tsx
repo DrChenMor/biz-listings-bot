@@ -5,6 +5,8 @@ import { requireUser } from "@/lib/auth";
 import { ReviewMark } from "@/components/review-mark";
 import { Business, db, link, nameOf, routeClass, when } from "@/lib/db";
 import { MARKS, PIPELINE_MARKS } from "@/lib/marks";
+import { deleteWatchRule, saveWatchRule } from "@/lib/actions";
+import { describe, ruleFilters, rulesFitting, WatchRule, Watchable } from "@/lib/watch";
 
 export const dynamic = "force-dynamic";
 
@@ -21,7 +23,7 @@ const FIGURES = [50000, 100000, 250000, 500000, 1000000];
 const FLAGS: [string, string][] = [["fresh", "New this week"], ["priced", "Has a price"], ["earning", "Shows profit"], ["phone", "Has a phone"], ["active", "Hide under offer"], ["archived", "Show archived"]];
 const MARK_FILTERS = [...MARKS, "In pipeline", "Passed"];
 
-type Listed = Business & { display_name: string | null; mark: string };
+type Listed = Business & { display_name: string | null; mark: string; previous_price: number | null; price_dropped_at: string | null };
 
 type Search = Record<string, string | undefined>;
 
@@ -40,8 +42,10 @@ export default async function Find({ searchParams }: { searchParams: Promise<Sea
   const suburb = (s.suburb ?? "").trim().replace(/[%_,()]/g, " ");
 
   const marks = list(s.mark).filter((m) => MARK_FILTERS.includes(m));
+  const { data: ruleData } = await db().from("watch_rules").select("id, name, filters").order("created_at");
+  const rules = (ruleData ?? []) as WatchRule[];
   // Find reads find_list: each business with its real name, archive flag and review mark. Archived ones stay out unless asked for.
-  let query = db().from("find_list").select("id, kind, site, status, name, display_name, mark, types, suburb, price_text, route, tags, first_seen, turnover, profit", { count: "exact" })
+  let query = db().from("find_list").select("id, kind, site, status, name, display_name, mark, types, suburb, price_text, route, tags, first_seen, turnover, profit, price, perth, phone, search_text, previous_price, price_dropped_at", { count: "exact" })
     .eq("on_sheet", true).neq("status", "Removed").is("same_as", null);
   if (!s.archived) query = query.is("archived_at", null);
   if (marks.length) query = query.in("mark", marks);
@@ -157,13 +161,35 @@ export default async function Find({ searchParams }: { searchParams: Promise<Sea
           </label>
         </div>
       </Filters>
+      <section className="watch" aria-label="What we look for">
+        <span className="lsub">What we look for:</span>
+        {rules.map((r) => (
+          <span className="chip watchchip" key={r.id} title={describe(r.filters)}>
+            <Link href={`/find?${new URLSearchParams(r.filters)}`}>★ {r.name}</Link>
+            <form action={deleteWatchRule}><input type="hidden" name="id" value={r.id} />
+              <button type="submit" className="plain" aria-label={`Stop watching ${r.name}`} title="Stop watching">×</button></form>
+          </span>
+        ))}
+        {Object.keys(ruleFilters(s)).length > 0 ? (
+          <form action={saveWatchRule} className="actions watchsave">
+            <input type="hidden" name="filters" value={JSON.stringify(ruleFilters(s))} />
+            <input className="input" name="name" required placeholder="Name these filters, e.g. Fitness under $500k" aria-label="Name for these filters" />
+            <button type="submit" className="btn">Watch these filters</button>
+          </form>
+        ) : !rules.length ? <span className="lsub">Pick some filters, then save them here. New listings that fit get a ★ and go into Tom&apos;s morning email.</span> : null}
+      </section>
       <div className="head"><span className="c1">Business</span><span className="c2">Route</span><span className="c3">Details</span><span className="c4">Price</span><span className="c5">Added</span><span className="c6">Reviewed</span></div>
       <div className="list">
         {rows.map((b) => (
           <div className="row" key={b.id}>
             <span className="c1"><Link className="rowlink" href={link(b.id)}><span className="ltitle">{nameOf(b, b)}</span></Link><span className="lsub">{[b.display_name ? `Listed as: ${b.name}` : null, b.types[0], b.suburb].filter(Boolean).join(" · ")}</span></span>
             <span className="c2"><span className={routeClass(b.route)}>{b.route}</span></span>
-            <span className="c3">{b.tags.map((t) => <span className="tag" key={t}>{t}</span>)}</span>
+            <span className="c3">
+              {rulesFitting(b as unknown as Watchable, rules).map((r) => <span className="tag star" key={`r${r}`}>★ {r}</span>)}
+              {b.previous_price && b.price_dropped_at && Date.now() - new Date(b.price_dropped_at).getTime() < 30 * 864e5
+                ? <span className="tag drop">Price down from {dollars(Number(b.previous_price))}</span> : null}
+              {b.tags.map((t) => <span className="tag" key={t}>{t}</span>)}
+            </span>
             <span className="c4 fig">{b.price_text}</span>
             <span className="c5 lsub">{when(b.first_seen)}</span>
             <span className="c6"><ReviewMark key={b.mark} id={b.id} mark={b.mark} name={nameOf(b, b)} /></span>

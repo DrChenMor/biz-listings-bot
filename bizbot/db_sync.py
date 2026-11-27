@@ -43,12 +43,45 @@ def sync(cfg: Config, store) -> int:
     with httpx.Client(base_url=f"{url}/rest/v1", timeout=60, headers={"apikey": key, "Authorization": f"Bearer {key}"}) as db:
         tracked = {t["business_id"] for t in _check(db.get("/tracking", params={"select": "business_id"})).json()}
         mark_copies(rows, tracked)
+        note_changes(rows, _existing(db), started)
         for start in range(0, len(rows), BATCH):
             _send(db, "/businesses?on_conflict=id", [{**row, "on_sheet": True, "synced_at": started} for row in rows[start: start + BATCH]])
         _check(db.patch("/businesses", params={"synced_at": f"lt.{started}"}, json={"on_sheet": False}))
         _send(db, "/site_runs?on_conflict=site", latest_runs(store))
     log.info("Sent %d businesses to the database", len(rows))
     return len(rows)
+
+
+_KEPT = "id,price,status,previous_price,price_dropped_at,ended_at"
+
+
+def _existing(db: httpx.Client) -> dict[str, dict]:
+    """What the database holds now for every business, to compare this sync against."""
+    found, start = {}, 0
+    while True:
+        page = _check(db.get("/businesses", params={"select": _KEPT, "order": "id"}, headers={"Range": f"{start}-{start + 999}"})).json()
+        found.update({r["id"]: r for r in page})
+        if len(page) < 1000:
+            return found
+        start += 1000
+
+
+def note_changes(rows: list[dict], existing: dict[str, dict], now: str) -> None:
+    """Price drops and listings that just ended, kept on each row so Find and the morning email can show them.
+
+    A drop counts when the asking price falls by more than 2% (and at least $1,000). A listing has ended when it turns
+    Removed; ones that were already Removed before keep no date, so the first sync doesn't report them all as new.
+    """
+    for row in rows:
+        old = existing.get(row["id"]) or {}
+        row["previous_price"], row["price_dropped_at"] = old.get("previous_price"), old.get("price_dropped_at")
+        before, now_price = old.get("price"), row.get("price")
+        if before and now_price and now_price < before - max(1000, 0.02 * before):
+            row["previous_price"], row["price_dropped_at"] = before, now
+        if row.get("status") == "Removed":
+            row["ended_at"] = old.get("ended_at") or (now if old and old.get("status") != "Removed" else None)
+        else:
+            row["ended_at"] = None
 
 
 def mark_copies(rows: list[dict], keep: set[str]) -> None:

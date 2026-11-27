@@ -479,3 +479,27 @@ export async function ignoreName(form: FormData): Promise<void> {
   await db().from("name_suggestions").update({ status: "ignored" }).eq("id", Number(form.get("suggestion")));
   redirect(back(form, "/pipeline"));
 }
+
+/** Save Find's current filters as something we look for. New listings that fit them are starred and emailed to Tom. */
+export async function saveWatchRule(form: FormData): Promise<void> {
+  const who = await requireUser();
+  const name = words(form.get("name"))?.slice(0, 60);
+  let filters: Record<string, string> = {};
+  try {
+    filters = JSON.parse(String(form.get("filters") || "{}"));
+  } catch {
+    filters = {};
+  }
+  if (name) {
+    await db().from("watch_rules").insert({ name, filters, created_by: who });
+    await logEvent("action", `Started watching "${name}"`, JSON.stringify(filters), who, "/find");
+  }
+  redirect(`/find?${new URLSearchParams(filters)}`);
+}
+
+export async function deleteWatchRule(form: FormData): Promise<void> {
+  const who = await requireUser();
+  const { data } = await db().from("watch_rules").delete().eq("id", Number(form.get("id"))).select("name").maybeSingle();
+  if (data) await logEvent("action", `Stopped watching "${data.name}"`, null, who, "/find");
+  redirect("/find");
+}

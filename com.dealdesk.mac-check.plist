@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>com.dealdesk.mac-check</string>
+  <!-- Opens the Mac check in Terminal (in the background): macOS lets Terminal read the Desktop, not a background job. -->
+  <key>ProgramArguments</key>
+  <array><string>/usr/bin/open</string><string>-g</string><string>-a</string><string>Terminal</string>
+    <string>/Users/Chen/Desktop/empire/biz-listings-bot/mac-check.command</string></array>
+  <!-- Every evening at 8pm. If the Mac is asleep then, it runs when the Mac next wakes. -->
+  <key>StartCalendarInterval</key>
+  <dict><key>Hour</key><integer>20</integer><key>Minute</key><integer>0</integer></dict>
+</dict>
+</plist>
