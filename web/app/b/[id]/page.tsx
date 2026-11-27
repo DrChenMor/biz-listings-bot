@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { AgentCard } from "@/components/agent-card";
 import { ConfirmButton } from "@/components/confirm-button";
 import { DealCardForm } from "@/components/deal-card";
+import { OverviewCard } from "@/components/overview";
 import { DriveCard } from "@/components/drive-card";
 import { CommunicationCard, ContactsCard } from "@/components/mail-cards";
 import { ReviewMark } from "@/components/review-mark";
@@ -14,9 +15,17 @@ import { Business, BY_HAND, db, Fact, link, nameOf, routeClass, Tracking, when }
 
 export const dynamic = "force-dynamic";
 
-export default async function BusinessPage({ params }: { params: Promise<{ id: string }> }) {
+const DRIVE_NOTES: Record<string, string> = {
+  disconnected: "Google Drive is disconnected, so the folder wasn't made. Reconnect it on the Sources page, then try again.",
+  failed: "Google Drive didn't make the folder. Try again in a minute.",
+};
+
+export default async function BusinessPage({ params, searchParams }: {
+  params: Promise<{ id: string }>; searchParams: Promise<Record<string, string | undefined>>;
+}) {
   const user = await requireUser();
   const id = decodeURIComponent((await params).id);
+  const driveNote = DRIVE_NOTES[(await searchParams).drive ?? ""];
   const { data } = await db().from("businesses").select("*").eq("id", id).maybeSingle();
   if (!data) notFound();
   const b = data as Business;
@@ -45,6 +54,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
           {b.map_url ? <a className="btn" href={b.map_url} target="_blank" rel="noreferrer">Map</a> : null}
         </div>
       </div>
+      {driveNote ? <p className="note warn" role="status">{driveNote}</p> : null}
       <NameSuggestions suggestions={(nameData ?? []) as NameSuggestion[]} back={link(b.id)} />
       {tracking?.archived_at ? (
         <div className="note warn archived" role="status">
@@ -59,6 +69,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
       {b.on_sheet || b.site === BY_HAND ? null : <p className="note warn">This business has left the Sheet, so it may be sold or gone.</p>}
       <div className="twocol">
         <div className="stack">
+          {tracking ? <OverviewCard business={b} tracking={tracking} /> : null}
           <section className="card"><h2>What we know</h2>
             {b.facts.map((f: Fact) => (
               <div className="fact" key={f.label}>
@@ -72,7 +83,7 @@ export default async function BusinessPage({ params }: { params: Promise<{ id: s
         <div className="stack">
           <DealCardForm business={b} tracking={tracking} />
           <DriveCard business={b} tracking={tracking} />
-          {tracking ? <ContactsCard id={b.id} /> : null}
+          {tracking ? <ContactsCard id={b.id} name={name} /> : null}
           <CommunicationCard id={b.id} />
           {tracking && !tracking.archived_at ? (
             <div className="dsmall">

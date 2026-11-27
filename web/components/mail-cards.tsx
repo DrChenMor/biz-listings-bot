@@ -1,16 +1,22 @@
 import { addContact, removeContact } from "@/lib/actions";
 import { db, when } from "@/lib/db";
+import { followUpLink } from "@/lib/mail";
 
 type Mail = { gmail_id: string; sent_at: string; sender: string | null; recipients: string | null; subject: string | null; body: string | null; incoming: boolean; attachments: string[] };
 
 const shortName = (header: string | null) => (header ?? "").replace(/<[^>]*>/g, "").replace(/"/g, "").trim() || header || "";
 
 /** The people we email about this business. The email copier copies their emails here. */
-export async function ContactsCard({ id }: { id: string }) {
+export async function ContactsCard({ id, name }: { id: string; name: string }) {
   const { data } = await db().from("contacts").select("email, name, role").eq("business_id", id).order("added_at");
+  const { data: last } = await db().from("mail").select("thread_id").eq("business_id", id).not("thread_id", "is", null)
+    .order("sent_at", { ascending: false }).limit(1).maybeSingle();
+  const follow = followUpLink(name, data ?? [], last?.thread_id ?? null);
   return (
     <section className="card"><h2>Contacts</h2>
       <p className="lsub">The seller's and broker's email addresses. Emails to and from them are copied here and into the Communication doc in Drive each day.</p>
+      {follow ? <p><a className="btn" href={follow} target="_blank" rel="noreferrer">{last?.thread_id ? "Follow up in the last email thread" : "Write a follow-up email"}</a>
+        <span className="lsub"> Opens Tom&apos;s deals Gmail. Nothing is sent until you press Send.</span></p> : null}
       {(data ?? []).map((c) => (
         <form action={removeContact} className="item contactrow" key={c.email}>
           <input type="hidden" name="id" value={id} /><input type="hidden" name="email" value={c.email} />

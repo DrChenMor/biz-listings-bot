@@ -7,16 +7,19 @@ import { endSession, passwordIsRight, requireUser, startSession } from "./auth";
 import { BY_HAND, db, link, nameOf, NEXT_STAGE, PASSED, STAGES, today } from "./db";
 import { MARKS } from "./marks";
 import { acquisitionsId, businessFolders, folderName, passedId } from "./drive";
-import { binFile, connection, createFolder, disconnect, moveFile, renameFile, saveDoc, startUpload } from "./google";
+import { binFile, connection, createFolder, disconnect, DriveDisconnected, moveFile, renameFile, saveDoc, startUpload } from "./google";
 import { isKind, SHEETS, worksheetHtml } from "./worksheets";
+import { logEvent } from "./log";
 
 export async function signIn(form: FormData): Promise<void> {
   const name = String(form.get("name") || "");
   if (!["Chen", "Tom"].includes(name) || !passwordIsRight(String(form.get("password") || ""))) {
+    await logEvent("sign-in", "Wrong password", null, name || null);
     await new Promise((resolve) => setTimeout(resolve, 800));
     redirect("/login?wrong=1");
   }
   await startSession(name);
+  await logEvent("sign-in", "Signed in", null, name);
   redirect("/");
 }
 
@@ -39,8 +42,11 @@ async function saveTracking(id: string, change: Record<string, unknown>): Promis
 async function moveTo(id: string, stage: string, who: string, extra: Record<string, unknown> = {}): Promise<void> {
   if (![...STAGES, PASSED].includes(stage)) throw new Error("Unknown stage");
   const { data } = await db().from("tracking").select("approached_on").eq("business_id", id).maybeSingle();
-  const approached = !data?.approached_on && STAGES.indexOf(stage) >= STAGES.indexOf("Approached") ? { approached_on: today() } : {};
-  await saveTracking(id, { stage, owner: who, ...approached, ...extra });
+  const change: Record<string, unknown> = { stage, owner: who, ...extra };
+  // The first move to Approached or later records the day. A blank date box sent with the move must not wipe it.
+  if (!data?.approached_on && !extra.approached_on && STAGES.indexOf(stage) >= STAGES.indexOf("Approached")) change.approached_on = today();
+  else if (!extra.approached_on && data?.approached_on) delete change.approached_on;
+  await saveTracking(id, change);
   await note(id, who, `Moved to ${stage}`);
 }
 
@@ -86,26 +92,46 @@ function words(value: FormDataEntryValue | null): string | null {
   return String(value ?? "").trim() || null;
 }
 
+const OVERVIEW_LABELS: Record<string, string> = {
+  display_name: "name", location: "location", product: "product / service", selling_reason: "selling reason",
+  turnover: "annual turnover", expenses: "annual expenses", profit: "EBITDA / profit", asking_price: "asking price",
+  under_management: "under management", approached_on: "approached on", followed_up_on: "last follow-up",
+};
+
+/**
+ * Save the business's overview, stage or dates. Only the fields the form sends are changed, so the Overview, the
+ * Stage box and the pipeline card's Edit form can each send their own part.
+ */
 export async function saveDealCard(form: FormData): Promise<void> {
   const who = await requireUser();
   const id = String(form.get("id"));
-  const stage = String(form.get("stage"));
   const [{ data }, { data: business }] = await Promise.all([
-    db().from("tracking").select("stage, display_name, drive_folder_id").eq("business_id", id).maybeSingle(),
+    db().from("tracking").select("*").eq("business_id", id).maybeSingle(),
     db().from("businesses").select("name").eq("id", id).maybeSingle(),
   ]);
-  const typed = words(form.get("display_name"));
-  const displayName = typed && typed !== business?.name ? typed.slice(0, 120) : null;
-  const card = {
-    display_name: displayName,
-    location: words(form.get("location")), product: words(form.get("product")), selling_reason: words(form.get("selling_reason")),
-    asking_price: amount(form.get("asking_price")), turnover: amount(form.get("turnover")), expenses: amount(form.get("expenses")),
-    profit: amount(form.get("profit")), under_management: words(form.get("under_management")),
-    approached_on: words(form.get("approached_on")), followed_up_on: words(form.get("followed_up_on")),
-  };
+  const card: Record<string, unknown> = {};
+  let displayName: string | null = data?.display_name ?? null;
+  if (form.has("display_name")) {
+    const typed = words(form.get("display_name"));
+    displayName = typed && typed !== business?.name ? typed.slice(0, 120) : null;
+    card.display_name = displayName;
+  }
+  for (const key of ["location", "product", "selling_reason", "under_management"]) {
+    if (form.has(key)) card[key] = words(form.get(key));
+  }
+  // An empty date box keeps the date there is: dates are only ever set or changed, never wiped by a blank box.
+  for (const key of ["approached_on", "followed_up_on"]) {
+    if (words(form.get(key))) card[key] = words(form.get(key));
+  }
+  for (const key of ["asking_price", "turnover", "expenses", "profit"]) {
+    if (form.has(key)) card[key] = amount(form.get(key));
+  }
+  const changed = Object.keys(card).filter((key) => key !== "display_name" && String(card[key] ?? "") !== String(data?.[key] ?? ""));
+  const stage = form.has("stage") ? String(form.get("stage")) : data?.stage ?? "Shortlist";
   if (data?.stage !== stage) await moveTo(id, stage, who, card);
   else await saveTracking(id, { ...card, owner: who });
-  if ((data?.display_name ?? null) !== displayName) {
+  if (changed.length) await note(id, who, `Updated ${changed.map((key) => OVERVIEW_LABELS[key] ?? key).join(", ")}`);
+  if (form.has("display_name") && (data?.display_name ?? null) !== displayName) {
     const shown = displayName ?? business?.name ?? id;
     await note(id, who, `Renamed to ${shown}`);
     // Keep the Drive folder's name in step, when Tom's Google Drive is connected. The website still saves if Drive says no.
@@ -118,7 +144,7 @@ export async function saveDealCard(form: FormData): Promise<void> {
       }
     }
   }
-  redirect(link(id));
+  redirect(back(form, link(id)));
 }
 
 export async function addBusiness(form: FormData): Promise<void> {
@@ -174,22 +200,36 @@ export async function createDriveFolder(form: FormData): Promise<void> {
   if (!business || !root) throw new Error("The Acquisitions folder isn't shared with the website.");
   const typed = words(form.get("name"));
   const name = folderSafe(typed ?? business.name) || folderSafe(business.name);
-  const folder = await createFolder(root, name);
+  let folder: string;
+  try {
+    folder = await createFolder(root, name);
+  } catch (e) {
+    await logEvent("problem", "Couldn't make a Drive folder", e instanceof Error ? e.message : String(e), who, link(id));
+    redirect(`${link(id)}?drive=${e instanceof DriveDisconnected ? "disconnected" : "failed"}`);
+  }
   await saveTracking(id, { drive_folder_id: folder, ...(typed && typed !== business.name ? { display_name: typed.slice(0, 120) } : {}) });
   await note(id, who, `Made the Drive folder ${name}`);
   redirect(link(id));
 }
 
-/** Where the browser should send a file for the business's folder. */
-export async function beginUpload(id: string, name: string, type: string, size: number): Promise<string> {
+/**
+ * Where the browser should send a file for the business's folder. Problems come back as words to show, because the
+ * website hides a server error's message from the browser.
+ */
+export async function beginUpload(id: string, name: string, type: string, size: number): Promise<{ address?: string; problem?: string }> {
   const who = await requireUser();
   const { data: tracked } = await db().from("tracking").select("drive_folder_id").eq("business_id", id).maybeSingle();
-  if (!tracked?.drive_folder_id) throw new Error("Link this business to its Drive folder first.");
+  if (!tracked?.drive_folder_id) return { problem: "Link this business to its Drive folder first." };
   const host = (await headers()).get("host") ?? "";
   const origin = `${host.startsWith("localhost") ? "http" : "https"}://${host}`;
-  const address = await startUpload(tracked.drive_folder_id, name.replace(/[\\/]+/g, "-").slice(0, 200), type, size, origin);
-  await note(id, who, `Added ${name} to the Drive folder`);
-  return address;
+  try {
+    const address = await startUpload(tracked.drive_folder_id, name.replace(/[\\/]+/g, "-").slice(0, 200), type, size, origin);
+    await note(id, who, `Added ${name} to the Drive folder`);
+    return { address };
+  } catch (e) {
+    await logEvent("problem", `Couldn't upload ${name}`, e instanceof Error ? e.message : String(e), who, link(id));
+    return { problem: e instanceof DriveDisconnected ? e.message : "Google Drive didn't take the file. Try again in a minute." };
+  }
 }
 
 export async function disconnectDrive(): Promise<void> {

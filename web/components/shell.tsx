@@ -1,7 +1,8 @@
-import { Bot, Database, KanbanSquare, LogOut, Search, Sun } from "lucide-react";
+import { Bot, Database, KanbanSquare, LogOut, ScrollText, Search, Sun } from "lucide-react";
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { signOut } from "@/lib/actions";
+import { brokenSince } from "@/lib/google";
 
 const SCREENS = [
   { href: "/", label: "Today", icon: Sun },
@@ -9,9 +10,11 @@ const SCREENS = [
   { href: "/pipeline", label: "Pipeline", icon: KanbanSquare },
   { href: "/agent", label: "Agent", icon: Bot },
   { href: "/sources", label: "Sources", icon: Database },
+  { href: "/log", label: "Log", icon: ScrollText },
 ];
 
-export function Shell({ user, active, children }: { user: string; active: string; children: ReactNode }) {
+export async function Shell({ user, active, children }: { user: string; active: string; children: ReactNode }) {
+  const driveDown = await brokenSince().catch(() => null);
   return (
     <div className="app">
       <aside className="side noprint">
@@ -29,7 +32,14 @@ export function Shell({ user, active, children }: { user: string; active: string
           <button type="submit" className="iconbtn" aria-label="Sign out" title="Sign out"><LogOut aria-hidden="true" /></button>
         </form>
       </aside>
-      <main className="main">{children}</main>
+      <main className="main">
+        {driveDown ? (
+          <p className="note warn noprint" role="alert">
+            Google Drive is disconnected, so files can&apos;t be added and folders can&apos;t be made. <Link href="/sources">Reconnect it on Sources</Link>, signed in as contacttomharari@gmail.com.
+          </p>
+        ) : null}
+        {children}
+      </main>
     </div>
   );
 }

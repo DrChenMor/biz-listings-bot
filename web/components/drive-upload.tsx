@@ -4,7 +4,7 @@ import { useRouter } from "next/navigation";
 import { useRef, useState } from "react";
 import { beginUpload } from "@/lib/actions";
 
-type Item = { name: string; done: number; status: "sending" | "done" | "failed" };
+type Item = { name: string; done: number; status: "sending" | "done" | "failed"; problem?: string };
 
 /** Send one file straight to Google, reporting how far it has got. */
 function send(address: string, file: File, onProgress: (share: number) => void): Promise<void> {
@@ -33,7 +33,8 @@ export function DriveUpload({ id }: { id: string }) {
     setItems((all) => [...all, ...files.map((f) => ({ name: f.name, done: 0, status: "sending" as const }))]);
     await Promise.all(files.map(async (file, i) => {
       try {
-        const address = await beginUpload(id, file.name, file.type, file.size);
+        const { address, problem } = await beginUpload(id, file.name, file.type, file.size);
+        if (!address) { update(start + i, { status: "failed", problem }); return; }
         await send(address, file, (share) => update(start + i, { done: share }));
         update(start + i, { done: 1, status: "done" });
       } catch {
@@ -57,7 +58,7 @@ export function DriveUpload({ id }: { id: string }) {
         onChange={(e) => { upload(Array.from(e.target.files ?? [])); e.target.value = ""; }} />
       {items.map((item, i) => (
         <p className="lsub" key={i} role="status">
-          {item.name}: {item.status === "done" ? "added" : item.status === "failed" ? "didn't upload, try again" : `${Math.round(item.done * 100)}%`}
+          {item.name}: {item.status === "done" ? "added" : item.status === "failed" ? (item.problem ?? "didn't upload, try again") : `${Math.round(item.done * 100)}%`}
         </p>
       ))}
     </div>

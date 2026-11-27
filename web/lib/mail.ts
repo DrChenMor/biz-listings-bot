@@ -96,6 +96,25 @@ export function matchBusinesses(mail: IncomingMail, contacts: ContactRow[], busi
   return named.length ? named : ids;
 }
 
+/** Perth calendar day of an email, as the database stores dates: 2026-11-17. */
+function perthDay(iso: string): string {
+  return new Date(iso).toLocaleDateString("en-CA", { timeZone: "Australia/Perth" });
+}
+
+/**
+ * Tom's own email to a contact keeps the card's dates true without anyone typing them: the earliest one is when the
+ * business was approached (unless an earlier date is already there), and any later one is the latest follow-up.
+ */
+export async function datesFromTomsEmail(businessId: string, sentAt: string): Promise<void> {
+  const day = perthDay(sentAt);
+  const { data } = await db().from("tracking").select("approached_on, followed_up_on").eq("business_id", businessId).maybeSingle();
+  if (!data) return;
+  const change: Record<string, string> = {};
+  if (!data.approached_on || day < data.approached_on) change.approached_on = day;
+  else if (day > data.approached_on && (!data.followed_up_on || day > data.followed_up_on)) change.followed_up_on = day;
+  if (Object.keys(change).length) await db().from("tracking").update(change).eq("business_id", businessId);
+}
+
 const IGNORED_SENDER = /(no-?reply|do-?not-?reply|notifications?|mailer-daemon|postmaster|newsletter|alerts?)@/i;
 
 /**
@@ -147,6 +166,7 @@ export async function saveMail(batch: IncomingMail[]): Promise<{ id: string; tar
       });
       if (error && error.code !== "23505") throw new Error(error.message);
       if (error) continue;
+      if (!incoming) await datesFromTomsEmail(id, mail.date);
       await db().from("activity").insert({
         business_id: id, who: "Email copier",
         text: `${incoming ? `Email from ${displayName(mail.from)}` : `Tom emailed ${displayName(mail.to)}`}${mail.subject ? `: ${mail.subject}` : ""}`.slice(0, 300),
@@ -157,4 +177,23 @@ export async function saveMail(batch: IncomingMail[]): Promise<{ id: string; tar
     results.push({ id: mail.id, targets, unmatched: false });
   }
   return results;
+}
+
+const DEALS_INBOX = "contacttomharari@gmail.com";
+
+/**
+ * A link that opens Tom's deals Gmail ready to follow up: the last email thread with the business's contacts if there
+ * is one (so the reply keeps the history), or else a new email to them with a short draft. Tom reviews and presses
+ * Send himself; the website never sends email.
+ */
+export function followUpLink(businessName: string, contacts: { email: string; name: string | null }[], lastThread: string | null): string | null {
+  if (lastThread) return `https://mail.google.com/mail/?authuser=${encodeURIComponent(DEALS_INBOX)}#all/${encodeURIComponent(lastThread)}`;
+  if (!contacts.length) return null;
+  const first = (contacts[0].name ?? "").split(/\s+/)[0];
+  const params = new URLSearchParams({
+    authuser: DEALS_INBOX, view: "cm", fs: "1", to: contacts.map((c) => c.email).join(","),
+    su: `Following up: ${businessName}`,
+    body: `Hi ${first || "there"},\n\nI'm following up on ${businessName}. Is it still available, and could we take the next step?\n\nKind regards,\nTom`,
+  });
+  return `https://mail.google.com/mail/?${params}`;
 }

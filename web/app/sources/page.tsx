@@ -2,7 +2,7 @@ import { Shell } from "@/components/shell";
 import { disconnectDrive } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 import { db, when } from "@/lib/db";
-import { connection, connectReady } from "@/lib/google";
+import { brokenSince, checkConnection, connection, connectReady } from "@/lib/google";
 
 export const dynamic = "force-dynamic";
 
@@ -25,7 +25,10 @@ export default async function Sources({ searchParams }: { searchParams: Promise<
     return [site, count ?? 0] as const;
   }));
   const { data: runs } = await db().from("site_runs").select("*").order("site");
+  // Ask Google whether the saved connection still works, so this page never says "connected" when it isn't.
+  await checkConnection();
   const drive = await connection();
+  const brokenAt = drive ? null : await brokenSince();
   const copier = (runs ?? []).find((r: { site: string }) => r.site === "email copier") as { started: string; result: string } | undefined;
 
   return (
@@ -42,7 +45,8 @@ export default async function Sources({ searchParams }: { searchParams: Promise<
           </>
         ) : (
           <>
-            <p>Connect Tom&apos;s Google account so the website can save files into the Acquisitions folders, such as filled-in worksheets. Sign in as <b>contacttomharari@gmail.com</b>.</p>
+            {brokenAt ? <p className="note warn">The connection stopped working on {when(brokenAt)}: Google needs Tom to sign in again. Press the button below, signed in as <b>contacttomharari@gmail.com</b>.</p>
+              : <p>Connect Tom&apos;s Google account so the website can save files into the Acquisitions folders, such as filled-in worksheets. Sign in as <b>contacttomharari@gmail.com</b>.</p>}
             {connectReady() ? <a className="btn primary" href="/drive/connect">Connect Google Drive</a>
               : <p className="lsub">Not set up yet: the Google sign-in settings are missing.</p>}
           </>

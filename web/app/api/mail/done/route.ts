@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { logEvent } from "@/lib/log";
 import { keyIsRight } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
@@ -13,6 +14,7 @@ export async function POST(request: Request) {
   const result = body.error ? `error: ${String(body.error).slice(0, 200)}`
     : `ok, ${Number(body.copied) || 0} copied, ${Number(body.unmatched) || 0} not matched${skipped}`;
   const { error } = await db().from("site_runs").upsert({ site: "email copier", started, result }, { onConflict: "site" });
+  await logEvent("email", body.error ? "Email copier run failed" : "Email copier ran", result);
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
   return NextResponse.json({ ok: true });
 }

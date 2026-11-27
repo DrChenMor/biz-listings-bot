@@ -2,11 +2,13 @@ import Link from "next/link";
 import { Shell } from "@/components/shell";
 import { ConfirmButton } from "@/components/confirm-button";
 import { StageSelect } from "@/components/stage-select";
+import { OverviewInputs, OVERVIEW_ROWS, overviewValues } from "@/components/overview";
 import { NameSuggestion, NameSuggestions } from "@/components/name-suggestions";
-import { addBusiness, addFromFolder, archiveBusiness, binFolder, deleteBusiness, dismissUnmatched, followedUp, linkFolder, linkUnmatched, restoreBusiness, setStage } from "@/lib/actions";
+import { addBusiness, addFromFolder, archiveBusiness, binFolder, deleteBusiness, dismissUnmatched, followedUp, linkFolder, linkUnmatched, restoreBusiness, saveDealCard, setStage } from "@/lib/actions";
 import { requireUser } from "@/lib/auth";
 import { BY_HAND, Business, dealCard, db, link, money, nameOf, PASSED, STAGES, Tracking, when } from "@/lib/db";
 import { businessFolders, driveReady, DriveFolder, folderLink } from "@/lib/drive";
+import { followUpLink } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
 
@@ -17,6 +19,7 @@ const VIEWS: Record<string, { label: string; shows: (r: Row) => boolean }> = {
   active: { label: "Active", shows: (r) => !r.archived_at && r.stage !== PASSED },
   all: { label: "All", shows: (r) => !r.archived_at },
   passed: { label: "Passed", shows: (r) => !r.archived_at && r.stage === PASSED },
+  ended: { label: "Listing ended", shows: (r) => !r.archived_at && r.businesses.status === "Removed" },
   archive: { label: "Archive", shows: (r) => Boolean(r.archived_at) },
 };
 
@@ -30,7 +33,7 @@ function short(value: number): string {
 }
 
 /** The small links at the bottom of a card. Delete asks first; archive is undone with Restore. */
-function CardActions({ row, name, hidden }: { row: Row; name: string; hidden: (more?: Record<string, string>) => React.ReactNode }) {
+function CardActions({ row, name, hidden, follow }: { row: Row; name: string; hidden: (more?: Record<string, string>) => React.ReactNode; follow?: string | null }) {
   const byHand = row.businesses.site === BY_HAND;
   const deleteQuestion = byHand
     ? `Delete ${name}? Its card, worksheets and notes are removed from the website. The Drive folder stays.`
@@ -38,6 +41,7 @@ function CardActions({ row, name, hidden }: { row: Row; name: string; hidden: (m
   return (
     <div className="dsmall">
       {!row.archived_at && row.drive_folder_id ? <a className="plain dark" href={folderLink(row.drive_folder_id)} target="_blank" rel="noreferrer">Drive</a> : null}
+      {!row.archived_at && follow ? <a className="plain dark" href={follow} target="_blank" rel="noreferrer" title="Opens Tom's deals Gmail: the last email thread, or a new email to the contacts. You press Send.">Follow up</a> : null}
       {!row.archived_at && row.stage === "Approached"
         ? <form action={followedUp}>{hidden()}<button type="submit" className="plain dark">Followed up today</button></form> : null}
       {row.archived_at
@@ -48,7 +52,7 @@ function CardActions({ row, name, hidden }: { row: Row; name: string; hidden: (m
   );
 }
 
-function DealCard({ row, here, names }: { row: Row; here: string; names: NameSuggestion[] }) {
+function DealCard({ row, here, names, follow }: { row: Row; here: string; names: NameSuggestion[]; follow: string | null }) {
   const b = row.businesses;
   const card = dealCard(b, row);
   const name = nameOf(b, row);
@@ -63,25 +67,37 @@ function DealCard({ row, here, names }: { row: Row; here: string; names: NameSug
       </article>
     );
   }
-  // Only the figures we know, on one line: no rows of dashes.
-  const figures = ([["Asking", card.asking], ["Turnover", card.turnover], ["Expenses", card.expenses], ["Profit", card.profit]] as const)
-    .filter(([, value]) => value);
+  const values = overviewValues(card, short);
   const dates = [row.approached_on ? `Approached ${when(row.approached_on)}` : "", row.followed_up_on ? `followed up ${when(row.followed_up_on)}` : ""]
     .filter(Boolean).join(" · ");
   return (
     <article className="dcard">
       <Link href={link(b.id)} className="dname" title={name !== b.name ? `Listed as: ${b.name}` : name}>{name}</Link>
-      <span className="lsub dclip">{[card.location, card.product].filter(Boolean).join(" · ")}</span>
       <NameSuggestions suggestions={names} back={here} compact />
       {b.status === "Removed" ? <span className="pill r-stop">Listing ended</span> : null}
-      {figures.length ? <p className="dline dfigs">{figures.map(([label, value]) => <span key={label}>{label} <b className="fig">{short(value as number)}</b></span>)}</p> : null}
-      {card.sellingReason ? <p className="dline dclip"><b>Selling:</b> {card.sellingReason}</p> : null}
+      {/* Tom's rows, always there: what's known, or a dash until someone fills it in. */}
+      <dl className="drows">
+        {OVERVIEW_ROWS.map(({ key, label }) => (
+          <div key={key} className={key === "selling_reason" || key === "product" || key === "location" ? "drow wide" : "drow"}>
+            <dt>{label}</dt>
+            <dd className={values[key] ? "" : "unknown"} title={values[key] || undefined}>{values[key] || "—"}</dd>
+          </div>
+        ))}
+      </dl>
+      <details className="dedit">
+        <summary className="plain dark">Edit</summary>
+        <form action={saveDealCard} className="stack">
+          {hidden()}
+          <OverviewInputs business={b} tracking={row} />
+          <button type="submit" className="btn primary">Save</button>
+        </form>
+      </details>
       {dates ? <p className="dline lsub">{dates}</p> : null}
       {row.next_step ? <p className="dline dclip"><b>Next:</b> {row.next_step}{row.next_due ? ` (by ${when(row.next_due)})` : ""}</p> : null}
       <form action={setStage} className="dstage">
         <StageSelect stages={[...STAGES, PASSED]} current={row.stage} label={`Stage for ${name}`}>{hidden()}</StageSelect>
       </form>
-      <CardActions row={row} name={name} hidden={hidden} />
+      <CardActions row={row} name={name} hidden={hidden} follow={follow} />
     </article>
   );
 }
@@ -110,9 +126,17 @@ export default async function Pipeline({ searchParams }: { searchParams: Promise
   const unmatched = unmatchedData ?? [];
   const inPipeline = live.filter((r) => r.stage !== PASSED);
   const { data: nameData } = await db().from("name_suggestions").select("id, business_id, name, source, evidence").eq("status", "new").order("found_at");
+  // Who to follow up with, and the last email thread with them, for each business.
+  const [{ data: contactData }, { data: threadData }] = await Promise.all([
+    db().from("contacts").select("business_id, email, name"),
+    db().from("mail").select("business_id, thread_id, sent_at").not("thread_id", "is", null).order("sent_at", { ascending: false }).limit(1000),
+  ]);
+  const followFor = (r: Row) => followUpLink(nameOf(r.businesses, r),
+    (contactData ?? []).filter((c) => c.business_id === r.business_id),
+    (threadData ?? []).find((m) => m.business_id === r.business_id)?.thread_id ?? null);
   const namesFor = (id: string) => ((nameData ?? []) as NameSuggestion[]).filter((n) => n.business_id === id);
   const overview = view === "active" || view === "all";
-  const groups = stage ? [stage] : view === "archive" ? ["Archived"] : view === "passed" ? [PASSED] : view === "all" ? [...STAGES, PASSED] : STAGES;
+  const groups = stage ? [stage] : view === "archive" ? ["Archived"] : view === "passed" ? [PASSED] : view === "all" || view === "ended" ? [...STAGES, PASSED] : STAGES;
 
   return (
     <Shell user={user} active="/pipeline">
@@ -137,7 +161,7 @@ export default async function Pipeline({ searchParams }: { searchParams: Promise
         return inGroup.length ? (
           <section key={group} className="stagesec">
             <h2>{group} <span className="lsub">({inGroup.length})</span></h2>
-            <div className="dcards">{inGroup.map((row) => <DealCard key={row.business_id} row={row} here={here} names={namesFor(row.business_id)} />)}</div>
+            <div className="dcards">{inGroup.map((row) => <DealCard key={row.business_id} row={row} here={here} names={namesFor(row.business_id)} follow={followFor(row)} />)}</div>
           </section>
         ) : null;
       })}

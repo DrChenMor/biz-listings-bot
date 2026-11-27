@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { db } from "@/lib/db";
+import { logEvent } from "@/lib/log";
 import { IncomingMail, keyIsRight, saveMail } from "@/lib/mail";
 
 export const dynamic = "force-dynamic";
@@ -25,6 +26,7 @@ export async function POST(request: Request) {
   try {
     return NextResponse.json({ results: await saveMail(messages) });
   } catch (e) {
+    await logEvent("email", "The email copier's batch couldn't be saved", e instanceof Error ? e.message : String(e));
     return NextResponse.json({ error: e instanceof Error ? e.message : "Couldn't save" }, { status: 500 });
   }
 }

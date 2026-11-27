@@ -233,3 +233,23 @@ select.mark { cursor: pointer; padding-right: 6px; }
 .namerow { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 2px 10px; }
 .namebtns { display: flex; gap: 12px; }
 .namebtns .plain { min-height: 24px; padding: 0; }
+/* Tom's overview rows: on the business page as a form, on the cards as a compact list. */
+.orows { display: flex; flex-direction: column; gap: 8px; }
+.orow { display: grid; grid-template-columns: 150px 1fr; align-items: center; gap: 10px; font-size: 14px; }
+.orow > span { color: var(--quiet); }
+.orow .input, .orow select { width: 100%; min-width: 0; }
+@media (max-width: 520px) { .orow { grid-template-columns: 1fr; gap: 2px; } }
+.drows { display: grid; grid-template-columns: 1fr 1fr; gap: 2px 12px; margin: 4px 0 2px; font-size: 13px; }
+.drow { min-width: 0; }
+.drow.wide { grid-column: 1 / -1; }
+.drow dt { color: var(--quiet); font-size: 11px; }
+.drow dd { margin: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.drow dd.unknown { color: #b9b4c9; }
+.dedit summary { width: max-content; min-height: 24px; padding: 0; list-style: none; }
+.dedit summary::-webkit-details-marker { display: none; }
+.dedit[open] { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px; }
+.dedit .orow { grid-template-columns: 1fr; gap: 2px; font-size: 13px; }
+.logrow { min-height: 48px; align-items: flex-start; }
+.logrow.bad { background: #fff6f5; }
+.logrow .c1 { display: flex; flex-direction: column; gap: 2px; }
+.logdetail { white-space: pre-wrap; word-break: break-word; }

@@ -5,11 +5,19 @@
  */
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from "node:crypto";
 import { db } from "./db";
+import { logEvent } from "./log";
 
 const SCOPES = "openid email https://www.googleapis.com/auth/drive";
 const GOOGLE_DOC = "application/vnd.google-apps.document";
 
 export type Connection = { email: string; connected_by: string; connected_at: string };
+
+/** Google no longer accepts the connection: it expired, or was removed in the Google account. Reconnecting fixes it. */
+export class DriveDisconnected extends Error {
+  constructor() {
+    super("Google Drive is disconnected. Reconnect it on the Sources page (sign in as contacttomharari@gmail.com).");
+  }
+}
 
 export function connectReady(): boolean {
   return Boolean(process.env.GOOGLE_OAUTH_CLIENT_ID && process.env.GOOGLE_OAUTH_CLIENT_SECRET);
@@ -47,7 +55,7 @@ async function tokenCall(params: Record<string, string>) {
     body: new URLSearchParams({ client_id: process.env.GOOGLE_OAUTH_CLIENT_ID ?? "", client_secret: process.env.GOOGLE_OAUTH_CLIENT_SECRET ?? "", ...params }),
   });
   const data = await response.json();
-  if (!response.ok) throw new Error(`Google said no: ${data.error_description ?? data.error}`);
+  if (!response.ok) throw Object.assign(new Error(`Google said no: ${data.error_description ?? data.error}`), { code: data.error });
   return data;
 }
 
@@ -56,14 +64,33 @@ export async function finishSignIn(code: string, redirectUri: string, who: strin
   const data = await tokenCall({ code, redirect_uri: redirectUri, grant_type: "authorization_code" });
   if (!data.refresh_token) throw new Error("Google didn't give lasting access. Remove Deal desk in your Google account's third-party access, then connect again.");
   const email = JSON.parse(Buffer.from(String(data.id_token).split(".")[1], "base64url").toString()).email as string;
-  const { error } = await db().from("google_connections").upsert({ id: "drive", email, refresh_token: seal(data.refresh_token), connected_by: who, connected_at: new Date().toISOString() });
+  const { error } = await db().from("google_connections").upsert({
+    id: "drive", email, refresh_token: seal(data.refresh_token), connected_by: who, connected_at: new Date().toISOString(), broken_at: null,
+  });
   if (error) throw new Error(error.message);
   return email;
 }
 
+/** The working Drive connection, or null when there's none or Google stopped accepting it. */
 export async function connection(): Promise<Connection | null> {
-  const { data } = await db().from("google_connections").select("email, connected_by, connected_at").eq("id", "drive").maybeSingle();
-  return data as Connection | null;
+  const { data } = await db().from("google_connections").select("email, connected_by, connected_at, broken_at").eq("id", "drive").maybeSingle();
+  return data && !data.broken_at ? (data as Connection) : null;
+}
+
+/** When the connection stopped working, if it has: shown as a warning on every page until Tom reconnects. */
+export async function brokenSince(): Promise<string | null> {
+  const { data } = await db().from("google_connections").select("broken_at").eq("id", "drive").maybeSingle();
+  return data?.broken_at ?? null;
+}
+
+/** Ask Google now whether the connection still works, and record it if not. For the Sources page. */
+export async function checkConnection(): Promise<boolean> {
+  try {
+    await accessToken();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function disconnect(): Promise<void> {
@@ -75,9 +102,19 @@ export async function disconnect(): Promise<void> {
 }
 
 async function accessToken(): Promise<string> {
-  const { data } = await db().from("google_connections").select("refresh_token").eq("id", "drive").maybeSingle();
-  if (!data) throw new Error("Google Drive isn't connected. Connect it on the Sources page.");
-  return (await tokenCall({ refresh_token: unseal(data.refresh_token), grant_type: "refresh_token" })).access_token;
+  const { data } = await db().from("google_connections").select("refresh_token, broken_at").eq("id", "drive").maybeSingle();
+  if (!data || data.broken_at) throw new DriveDisconnected();
+  try {
+    return (await tokenCall({ refresh_token: unseal(data.refresh_token), grant_type: "refresh_token" })).access_token;
+  } catch (e) {
+    // invalid_grant: the sign-in expired or was removed. Remember it, so every page can say so instead of failing.
+    if ((e as { code?: string }).code === "invalid_grant") {
+      await db().from("google_connections").update({ broken_at: new Date().toISOString() }).eq("id", "drive");
+      await logEvent("problem", "Google Drive connection stopped working", (e as Error).message);
+      throw new DriveDisconnected();
+    }
+    throw e;
+  }
 }
 
 export async function createFolder(parentId: string, name: string): Promise<string> {
